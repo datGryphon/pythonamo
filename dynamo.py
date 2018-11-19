@@ -17,7 +17,7 @@ if __name__ == '__main__':
         is_leader = True
         leader_hostname = hostname
 
-    n = Node(is_leader, leader_hostname)
+    n = Node(is_leader, leader_hostname, hostname)
 
     while True:
         user_input = input("++> ")
