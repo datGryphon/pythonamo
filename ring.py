@@ -77,6 +77,13 @@ if __name__ == '__main__':
     r.add_node('node1', "node1.hostname")
     r.add_node('node2', "node2.hostname")
     r.add_node('node3', "node3.hostname")
+    r.add_node('node4', "node4.hostname")
+    r.add_node('node5', "node5.hostname")
+    r.add_node('node6', "node6.hostname")
+    r.add_node('node7', "node7.hostname")
+    r.add_node('node8', "node8.hostname")
+    r.add_node('node9', "node9.hostname")
+
 
     # Try inserting a key
     target_hostname = r.get_node_for_key("key4")

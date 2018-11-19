@@ -17,10 +17,17 @@ if __name__ == '__main__':
         is_leader = True
         leader_hostname = hostname
 
-    n = Node(is_leader, leader_hostname)
+        n = Node(is_leader, leader_hostname)
 
-    while True:
-        user_input = input("++> ")
-        result = n._process_command(user_input)
+        #enter main loop
+        while True:
+            user_input = input("++> ")
+            result = n._process_command(user_input)
 
-        print(result)
+            print(result)
+
+    #else not the leader
+
+    #enter join loop
+
+        #enter main loop
