@@ -98,6 +98,23 @@ class Storage(object):
 
 		self.db.commit()
 
+	#returns a list of sorted clock,value pairs for each matching 
+	#row in the database
+	def getFile(self,hash_digest):
+		c=self.db.cursor()
+		uHash=toUni(hash_digest)
+		c.execute('''SELECT * FROM storage WHERE hash=?;''',(uHash,))
+		rows=c.fetchall()
+		
+		return self.sortData([ [eval('%s'%(r[2])),'%s'%(r[3])] for r in rows ]) if rows is not None else None
+
+	#remove all instances of a given hash from the db
+	def remFile(self,hash_digest):
+		c=self.db.cursor()
+		uHash=toUni(hash_digest)
+		c.execute('''DELETE FROM storage WHERE hash=?;''',(uHash,))
+		self.db.commit()
+
 	#returns 1 if val2 -> val1
 	#otherwise 0
 	def compare_clocks(self,val1, val2):
@@ -146,16 +163,6 @@ class Storage(object):
 
 		return values
 
-	#returns a list of sorted clock,value pairs for each matching 
-	#row in the database
-	def getFile(self,hash_digest):
-		c=self.db.cursor()
-		uHash=toUni(hash_digest)
-		c.execute('''SELECT * FROM storage WHERE hash=?;''',(uHash,))
-		rows=c.fetchall()
-		
-		return self.sortData([ [eval('%s'%(r[2])),'%s'%(r[3])] for r in rows ]) if rows is not None else None
-
 	#merge together the vector clocks of two concurrent versions of data
 	#such that each clock value is the max of the prev two
 	#this will rejoin the branches of the version history
@@ -168,55 +175,50 @@ class Storage(object):
 				comb_clock[serv]=clock
 		return comb_clock
 
-	def remFile(self,hash_digest):
-		c=self.db.cursor()
-		uHash=toUni(hash_digest)
-		c.execute('''DELETE FROM storage WHERE hash=?;''',(uHash,))
-		self.db.commit()
+
+if __name__ == '__main__':
+	db=Storage(':memory:')
+
+	db.storeFile(h('testFile'),'s1',None,'This is a test file 0')
+
+	#concurrent write operations by s1 and s2
+	prev=db.getFile(h('testFile'))[0][0]
+	db.storeFile(h('testFile'),'s1',prev,'This is a test file 1')
+	db.storeFile(h('testFile'),'s2',prev,'This is a test file 2')
 
 
-db=Storage(':memory:')
+	results=db.getFile(h('testFile'))
+	prev=db.mergeClocks(results[0][0],results[1][0])
 
-db.storeFile(h('testFile'),'s1',None,'This is a test file 0')
+	#store version that was reconciled by client
+	db.storeFile(h('testFile'),'s3',prev,'This is a test file 3')
 
-#concurrent write operations by s1 and s2
-prev=db.getFile(h('testFile'))[0][0]
-db.storeFile(h('testFile'),'s1',prev,'This is a test file 1')
-db.storeFile(h('testFile'),'s2',prev,'This is a test file 2')
+	prev=db.getFile(h('testFile'))[0][0]
 
+	db.storeFile(h('testFile'),'s1',prev,'This is a test file 4')
 
-results=db.getFile(h('testFile'))
-prev=db.mergeClocks(results[0][0],results[1][0])
+	prev=db.getFile(h('testFile'))[0][0]
 
-#store version that was reconciled by client
-db.storeFile(h('testFile'),'s3',prev,'This is a test file 3')
+	db.storeFile(h('testFile'),'s2',prev,'This is a test file 5')
 
-prev=db.getFile(h('testFile'))[0][0]
+	prev=db.getFile(h('testFile'))[0][0]
 
-db.storeFile(h('testFile'),'s1',prev,'This is a test file 4')
+	db.storeFile(h('testFile'),'s2',prev,'This is a test file 6')
 
-prev=db.getFile(h('testFile'))[0][0]
+	prev=db.getFile(h('testFile'))[0][0]
 
-db.storeFile(h('testFile'),'s2',prev,'This is a test file 5')
+	db.storeFile(h('testFile'),'s1',prev,'This is a test file 7')
 
-prev=db.getFile(h('testFile'))[0][0]
+	prev=db.getFile(h('testFile'))[0][0]
 
-db.storeFile(h('testFile'),'s2',prev,'This is a test file 6')
+	db.storeFile(h('testFile'),'s4',prev,'This is a test file 8')
 
-prev=db.getFile(h('testFile'))[0][0]
+	prev=db.getFile(h('testFile'))[0][0]
 
-db.storeFile(h('testFile'),'s1',prev,'This is a test file 7')
+	db.storeFile(h('testFile'),'s4',prev,'This is a test file 9')
 
-prev=db.getFile(h('testFile'))[0][0]
+	print db.getFile(h('testFile'))
 
-db.storeFile(h('testFile'),'s4',prev,'This is a test file 8')
+	db.remFile(h('testFile'))
 
-prev=db.getFile(h('testFile'))[0][0]
-
-db.storeFile(h('testFile'),'s4',prev,'This is a test file 9')
-
-print db.getFile(h('testFile'))
-
-db.remFile(h('testFile'))
-
-print db.getFile(h('testFile'))
+	print db.getFile(h('testFile'))
