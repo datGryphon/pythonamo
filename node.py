@@ -17,10 +17,11 @@ class Node(object):
             self.membership_ring.add_node(leader_hostname, leader_hostname)
 
         print(len(self.membership_ring))
-        
-        self.sloppy_Qfrac=sloppy_Qfrac #fraction of total members to replicate on
-        #sets self.sloppy_Qsize to the number of replications required
-        self.update_SQsize=lambda: self.sloppy_Qsize=floor(len(self.membership_ring)*self.sloppy_Qfrac) 
+
+        self.sloppy_Qfrac = sloppy_Qfrac  # fraction of total members to replicate on
+
+        # sets self.sloppy_Qsize to the number of replications required
+        self.update_SQsize = lambda: floor(len(self.membership_ring) * self.sloppy_Qfrac)
         self.update_SQsize()
 
         # saves all the pending membership messages
@@ -37,7 +38,7 @@ class Node(object):
             "quit": lambda x: x                 # 6. Quit
         }
 
-        self.db=Storage(':memory:')#set up sqlite table in memory
+        self.db = Storage(':memory:')  # set up sqlite table in memory
 
     def _process_command(self, user_input):
         """Process commands if node is the leader. Else, forward it to the leader."""
@@ -61,21 +62,21 @@ class Node(object):
             return "Error: hostname required"
 
         # todo: implement totem?
-            #I dont think we need totem, we just need local failure detection
-            #if a client sends remove node command, then we will manually
-            #transfer necessary files away from the peer, before sending
-            #a message to every peer to remove that node, when the node in 
-            #question gets that final remove message, it should kill itself.
+        # I dont think we need totem, we just need local failure detection
+        # if a client sends remove node command, then we will manually
+        # transfer necessary files away from the peer, before sending
+        # a message to every peer to remove that node, when the node in
+        # question gets that final remove message, it should kill itself.
 
-            #likewise, for adding a peer, transfer all necessary files to new peer
-            #if peer revceives all the files, send add message to all peers
+        # likewise, for adding a peer, transfer all necessary files to new peer
+        # if peer revceives all the files, send add message to all peers
         # send add message to all peers.
         # expect replies from at least N/2
         # send commit message to all peers
 
         self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
 
-        #todo: if number of replicas goes up, need to find new peer and send them your files
+        # todo: if number of replicas goes up, need to find new peer and send them your files
 
         return "added " + data[0] + " to ring"
 
@@ -85,8 +86,8 @@ class Node(object):
 
         self.membership_ring.remove_node(data[0])
 
-        #todo: update sloppy quorum size, if size changes
-            #tell your lowest index replica to delete your files
+        # todo: update sloppy quorum size, if size changes
+        # tell your lowest index replica to delete your files
 
         return "removed " + data[0] + " from ring"
 
@@ -101,11 +102,11 @@ class Node(object):
         target_node = self.membership_ring.get_node_for_key(data[0])
 
         if target_node == self.my_hostname:
-            self.db.storeFile(key,self.my_hostname,prev,value)
+            self.db.storeFile(key, self.my_hostname, prev, value)
 
-            #todo: sloppy quorum
+            # todo: sloppy quorum
 
-            return "stored %s:%s locally [%s]"%(key,value,self.my_hostname)
+            return "stored %s:%s locally [%s]" % (key, value, self.my_hostname)
         else:
             return self._send_data_to_peer(target_node, key, value)
 
@@ -117,9 +118,9 @@ class Node(object):
         target_node = self.membership_ring.get_node_for_key(data[0])
 
         if target_node == self.my_hostname:
-            return "retrieved %s:%s locally [%s]"%(
-                    data[0],self.db.getFile(data[0]),self.my_hostname
-                )
+            return "retrieved %s:%s locally [%s]" % (
+                data[0], self.db.getFile(data[0]), self.my_hostname
+            )
         else:
             return self._get_data_from_peer(target_node, data[0])
 
@@ -132,7 +133,7 @@ class Node(object):
 
         if target_node == self.my_hostname:
             self.db.getFile(data[0])
-            return "deleted %s locally [%s]"%(data[0],self.my_hostname)
+            return "deleted %s locally [%s]" % (data[0], self.my_hostname)
         else:
             return self._delete_data_from_peer(target_node, data[0])
 
