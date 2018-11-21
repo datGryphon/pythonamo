@@ -62,7 +62,8 @@ class Ring(object):
         if n_rep != 0:
             #if there are replicas, return the n_rep+1 nodes 
             #starting with keys[start]
-            return [ self._nodes[k] for k in self._keys[start:start+n_rep+1] ]
+            #add the list of keys to itself so the slice wraps around
+            return [ self._nodes[k] for k in (self._keys+self._keys)[start:start+n_rep+1] ]
         else: #otherwise just send back the first node
             return self._nodes[self._keys[start]]
 
@@ -89,6 +90,7 @@ if __name__ == '__main__':
     r.add_node('node1', "node1.hostname")
     r.add_node('node2', "node2.hostname")
     r.add_node('node3', "node3.hostname")
+    r.add_node('node4',"node4.hostname")
 
     # Try inserting a key
     target_hostname = r.get_node_for_key("key4")
@@ -107,14 +109,16 @@ if __name__ == '__main__':
     print(len(r))
 
     #add a 4th node to the ring
-    r.add_node('node4','node4.hostname')
 
     #if the data is replicated on 2 other servers they would be the 
     #next two lar
+    target_hostname = r.get_node_for_key("key6",2)
+    print(target_hostname)  # got node1hostname
+
     target_hostname = r.get_node_for_key("key0",2)
     print(target_hostname)  # got node1hostname
 
-
     r.remove_node('node1')
-    target_hostname = r.get_node_for_key("key0")
+    target_hostname = r.get_node_for_key("key0",2)
     print(target_hostname)  # got node3hostname
+
