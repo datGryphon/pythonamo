@@ -1,0 +1,64 @@
+version: '3'
+
+services:
+  machine1:
+    image: python:3
+    command: python /code/dynamo.py --port 13337
+    hostname: vdi-linux-030.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-030.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
+
+  machine2:
+    image: python:3
+    command: python /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-031.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-031.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
+
+  machine3:
+    image: python:3
+    command: python /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-032.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-032.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
+
+  machine4:
+    image: python:3
+    command: python /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-033.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-033.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
+  machine5:
+    image: python:3
+    command: python /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-034.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-034.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
+networks:
+  neunet:
+    driver: bridge
