@@ -6,6 +6,8 @@ from node import Node
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--leader', help='Hostname of leader')
+    parser.add_argument('--port', default=13337, help='TCP port number')
+    parser.add_argument('--qfrac', default=0.34, help='TCP port number')
 
     args = parser.parse_args()
 
@@ -17,10 +19,5 @@ if __name__ == '__main__':
         is_leader = True
         leader_hostname = hostname
 
-    n = Node(is_leader, leader_hostname, hostname)
-
-    while True:
-        user_input = input("++> ")
-        result = n._process_command(user_input)
-
-        print(result)
+    n = Node(is_leader, leader_hostname, hostname, tcp_port=args.port, sloppy_Qfrac=args.qfrac)
+    n.accept_connections()

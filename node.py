@@ -1,22 +1,24 @@
+import socket
 from collections import defaultdict
 from storage import Storage
 from ring import Ring
 from math import floor
 
+import messages
+
 
 class Node(object):
 
-    def __init__(self, is_leader, leader_hostname, my_hostname, sloppy_Qfrac=0.34):
+    def __init__(self, is_leader, leader_hostname, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34):
 
         self.is_leader = is_leader
         self.leader_hostname = leader_hostname
         self.my_hostname = my_hostname
+        self.tcp_port = tcp_port
 
         self.membership_ring = Ring()  # Other nodes in the membership
         if self.is_leader:
             self.membership_ring.add_node(leader_hostname, leader_hostname)
-
-        print(len(self.membership_ring))
 
         self.sloppy_Qfrac = sloppy_Qfrac  # fraction of total members to replicate on
 
@@ -39,6 +41,27 @@ class Node(object):
         }
 
         self.db = Storage(':memory:')  # set up sqlite table in memory
+
+        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    def accept_connections(self):
+        self.tcp_socket.bind((self.my_hostname, self.tcp_port))
+        self.tcp_socket.listen(5)
+
+        while True:
+            conn, addr = self.tcp_socket.accept()
+            data = conn.recv(1024)  # can be less than 1024 for this application
+            # todo: figure out a more appropriate buffer size
+            if not data:
+                continue
+
+            self._process_message(data, addr[0])  # addr is a tuple of hostname and port
+
+    def _process_message(self, data, sender):
+        data_tuple = messages._unpack_message(data)
+        if data_tuple[0] == 0:  # Message from client, second element should be user_input string
+            result = self._process_command(data_tuple[1])
+            print(result)
 
     def _process_command(self, user_input):
         """Process commands if node is the leader. Else, forward it to the leader."""
