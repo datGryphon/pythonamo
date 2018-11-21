@@ -97,5 +97,3 @@ if __name__ == '__main__':
     r.remove_node('node1')
     target_hostname = r.get_node_for_key("key0")
     print(target_hostname)  # got node3hostname
-
-

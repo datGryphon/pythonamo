@@ -28,6 +28,8 @@ class Node(object):
 
         # saves all the pending membership messages
         self._membership_messages = defaultdict(set)
+        self.current_view = 0  # increment this on every leader election
+        self.request_id = 0  # increment this on every request sent to peers
 
         # Maps command to the corresponding function.
         # Command arguments are passed as the first argument to the function.
@@ -84,7 +86,10 @@ class Node(object):
         if not data:
             return "Error: hostname required"
 
-        # todo: implement totem?
+        if len(self.membership_ring) == 1:  # Only leader is in the ring. Just add.
+            self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
+            return "added " + data[0] + " to ring"
+
         # I dont think we need totem, we just need local failure detection
         # if a client sends remove node command, then we will manually
         # transfer necessary files away from the peer, before sending
