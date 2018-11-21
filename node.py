@@ -62,6 +62,46 @@ class Node(object):
 
             self._process_message(data, addr[0])  # addr is a tuple of hostname and port
 
+        #while true:
+
+            #if there is a new inbound connection, accept it
+                #put on unidentified list
+
+            #if there is a new message from unidentified list
+                #read it, if client, respond EBUSY
+                    #put on client list
+                #if its a peer, it should be your parent contacting you
+                    #put on peer list, process message,
+
+                    #complete peer bootstrap process, including connecting 
+                    #to the other peers in the ring
+
+                    #enter main loop
+
+    #def main_loop
+
+        #bind server socket (if not already bound)
+
+        #while true:
+            #use select to check if server socket has inbound conn
+                #if so, accept connection
+                    #put on unidentified conns list
+
+            #use select to check unidentified conns list
+                #if new message from conn
+                    #read it and determine connection type
+                        #add to either client conns or peer conns
+
+            #use select to check peer conns for message
+                #if new message from conn
+                    #read it and process command
+
+            #use select to check client conns for message
+                #if new message, process command
+
+            #check if there are any hinted handoffs that need to be handled
+
+
     def _process_message(self, data, sender):
         data_tuple = messages._unpack_message(data)
         if data_tuple[0] == 0:  # Message from client, second element should be user_input string

@@ -20,4 +20,9 @@ if __name__ == '__main__':
         leader_hostname = hostname
 
     n = Node(is_leader, leader_hostname, hostname, tcp_port=args.port, sloppy_Qfrac=args.qfrac)
+    
+    #if is leader, enter main loop
+
+    #else enter join phase
+
     n.accept_connections()
