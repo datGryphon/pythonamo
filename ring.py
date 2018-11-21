@@ -43,7 +43,10 @@ class Ring(object):
             index = bisect.bisect_left(self._keys, hash_)
             del self._keys[index]
 
-    def __getitem__(self, key):
+    #modified so that when number of replicas greater than 0
+    #returns list of all nodes that should store the data
+    #if n_rep == 0 functions as it did previously
+    def __getitem__(self, key, n_rep=0):
         """Return a node hostname, given a key.
 
         The vnode with a hash value nearest but not less than that of the given
@@ -55,7 +58,13 @@ class Ring(object):
         start = bisect.bisect(self._keys, hash_)
         if start == len(self._keys):
             start = 0
-        return self._nodes[self._keys[start]]
+
+        if n_rep != 0:
+            #if there are replicas, return the n_rep+1 nodes 
+            #starting with keys[start]
+            return [ self._nodes[k] for k in self._keys[start:start+n_rep+1] ]
+        else: #otherwise just send back the first node
+            return self._nodes[self._keys[start]]
 
     def __len__(self):
         return len(self._nodes) // self.vnodes  # to account for vnodes
@@ -67,8 +76,11 @@ class Ring(object):
     def remove_node(self, node_id):
         return self.__delitem__(node_id)
 
-    def get_node_for_key(self, key):
-        return self.__getitem__(key)
+    #modified so that when number of replicas greater than 0
+    #returns list of all nodes that should store the data
+    #if n_rep == 0 functions as it did previously
+    def get_node_for_key(self, key, n_rep=0):
+        return self.__getitem__(key,n_rep)
 
 
 if __name__ == '__main__':
@@ -93,6 +105,15 @@ if __name__ == '__main__':
     print(target_hostname)  # got node1hostname
 
     print(len(r))
+
+    #add a 4th node to the ring
+    r.add_node('node4','node4.hostname')
+
+    #if the data is replicated on 2 other servers they would be the 
+    #next two lar
+    target_hostname = r.get_node_for_key("key0",2)
+    print(target_hostname)  # got node1hostname
+
 
     r.remove_node('node1')
     target_hostname = r.get_node_for_key("key0")
