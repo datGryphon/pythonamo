@@ -98,7 +98,6 @@ class Node(object):
 
         # likewise, for adding a peer, transfer all necessary files to new peer
         # if peer revceives all the files, send add message to all peers
-        # send add message to all peers.
         # expect replies from at least N/2
         # send commit message to all peers
 
@@ -160,7 +159,7 @@ class Node(object):
         target_node = self.membership_ring.get_node_for_key(data[0])
 
         if target_node == self.my_hostname:
-            self.db.getFile(data[0])
+            self.db.remFile(data[0])
             return "deleted %s locally [%s]" % (data[0], self.my_hostname)
         else:
             return self._delete_data_from_peer(target_node, data[0])
