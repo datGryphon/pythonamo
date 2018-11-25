@@ -9,7 +9,7 @@ import messages
 
 class Node(object):
 
-    def __init__(self, is_leader, leader_hostname, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34, sloppy_R=1, sloppy_W=3):
+    def __init__(self, is_leader, leader_hostname, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34, sloppy_R=3, sloppy_W=3):
 
         self.is_leader = is_leader
         self.leader_hostname = leader_hostname
@@ -45,9 +45,17 @@ class Node(object):
             "quit": lambda x: x                 # 6. Quit
         }
 
+        #eventually need to change this so table is persistent across crashes
         self.db = Storage(':memory:')  # set up sqlite table in memory
 
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #bind socket to correct port
+
+        #lists of connections
+        self.unidentified_sockets=[]
+        self.client_sockets=[]
+        self.joining_peers=[]
+        self.peer_sockets=[]
 
     def accept_connections(self):
         self.tcp_socket.bind((self.my_hostname, self.tcp_port))
@@ -62,24 +70,58 @@ class Node(object):
 
             self._process_message(data, addr[0])  # addr is a tuple of hostname and port
 
-        #while true:
+    def start(self):
 
-            #if there is a new inbound connection, accept it
-                #put on unidentified list
+        if is_leader:
+            self.main_loop()
+        else:
+            self.join_phase()
 
-            #if there is a new message from unidentified list
-                #read it, if client, respond EBUSY
-                    #put on client list
-                #if its a peer, it should be your parent contacting you
-                    #put on peer list, process message,
 
-                    #complete peer bootstrap process, including connecting 
-                    #to the other peers in the ring
+    def join_phase(self):
+        pass
 
-                    #enter main loop
+        #tcp connect to Peer hostname
 
-    #def main_loop
+        #if no connection:
+            # Error
+        # else:
+            #send newPeer req
 
+            #add peer socket to peerlist
+
+            #while true:
+
+                #if response peer read it
+                    #if peer list
+                        #create list of peers
+                        #mark each peers state as unconnected,unsynched
+
+                        #in loop ten times
+                            #connect to each peer with a short time out
+                                #if connected, add socket to peerlist,
+                                    #mark peer as connected
+                        #if not connected to all peers after loop, abort
+
+                        #send newPeer req to all peers
+
+                    #if storeFile req, store and ack
+
+                    #if all_done, mark peer as synched
+                        #send Join_Done to all peers
+                            #if a peer closed connection, set reminder to reconnect to it
+                        #enter main loop
+
+                #if there is a new inbound connection, accept it
+                    #put on unidentified list
+
+                #if there is a new message from unidentified list
+                    #read it, if client, respond EBUSY
+                        #put on client list
+
+
+    def main_loop(self):
+        pass
         #bind server socket (if not already bound)
 
         #while true:
@@ -90,7 +132,11 @@ class Node(object):
             #use select to check unidentified conns list
                 #if new message from conn
                     #read it and determine connection type
-                        #add to either client conns or peer conns
+                        #if new client add to client conns
+                        #if new peer, add to joining_peers
+                            #if not already in the process of adding a peer
+                            #ask all peers if you can add a peer
+                            #set up timeout and a container to store responses
 
             #use select to check peer conns for message
                 #if new message from conn
@@ -99,8 +145,8 @@ class Node(object):
             #use select to check client conns for message
                 #if new message, process command
 
-            #check if there are any hinted handoffs that need to be handled
-
+            #if a peer comes back online
+                #check if there are any hinted handoffs that need to be handled
 
     def _process_message(self, data, sender):
         data_tuple = messages._unpack_message(data)

@@ -23,4 +23,4 @@ while True:
         continue
 
     msg = messages.client_message(user_input)
-    s.send(msg)
+    s.sendall(msg)
