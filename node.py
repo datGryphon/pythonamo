@@ -3,18 +3,21 @@ from collections import defaultdict
 from storage import Storage
 from ring import Ring
 from math import floor
+import select
 
 import messages
 
 
 class Node(object):
 
-    def __init__(self, is_leader, leader_hostname, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34, sloppy_R=3, sloppy_W=3):
+    def __init__(self, is_leader, leader_hostname, leader_port, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34, sloppy_R=3, sloppy_W=3):
 
         self.is_leader = is_leader
         self.leader_hostname = leader_hostname
+        self.leader_port=leader_port
         self.my_hostname = my_hostname
         self.tcp_port = tcp_port
+        self.my_address=(self.my_hostname,self.tcp_port)
 
         self.membership_ring = Ring()  # Other nodes in the membership
         if self.is_leader:
@@ -48,18 +51,23 @@ class Node(object):
         #eventually need to change this so table is persistent across crashes
         self.db = Storage(':memory:')  # set up sqlite table in memory
 
+        #create socket
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         #bind socket to correct port
+        self.tcp_socket.bind(self.my_hostname,self.tcp_port)
+        self.tcp_socket.listen(5)
 
         #lists of connections
         self.unidentified_sockets=[]
-        self.client_sockets=[]
-        self.joining_peers=[]
-        self.peer_sockets=[]
+        self.client_sockets={}
+        self.joining_peers={}
+        self.peer_sockets={}
+        self.peer_server_addresses=[]
 
     def accept_connections(self):
-        self.tcp_socket.bind((self.my_hostname, self.tcp_port))
-        self.tcp_socket.listen(5)
+        #moved to __init__
+        # self.tcp_socket.bind((self.my_hostname, self.tcp_port))
+        # self.tcp_socket.listen(5)
 
         while True:
             conn, addr = self.tcp_socket.accept()
@@ -79,20 +87,41 @@ class Node(object):
 
 
     def join_phase(self):
-        pass
-
         #tcp connect to Peer hostname
+        peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        peer.settimeout(120)
 
-        #if no connection:
-            # Error
-        # else:
-            #send newPeer req
+        #write down peer address incase you need to contact him later
+        self.peer_server_addresses.append((self.leader_hostname,self.leader_port))
 
-            #add peer socket to peerlist
+        try:
+            peer.connect((self.leader_hostname,self.leader_port))
+        except socket.timeout:
+            print("Error! could not connect to bootstrap peer")
+            exit(0)
 
-            #while true:
+        #send newPeer req
+        peer.sendall(messages.newPeerReq(self.my_address))
+        #add peer socket to peerlist key is the hostname (not the full addr tuple)
+        self.peer_sockets[peer.getpeername()[0]]=peer
 
-                #if response peer read it
+        while True:
+            #if response from peer read it
+            readable_peers=select.select(
+                    list(self.peer_sockets.values()),[],[],0
+                )[0]
+
+            if readable_peers:
+                sock=readable_peers[0]
+                msg=sock.recv(5)
+
+                if msg == '':
+                    print("Peer closed connection: %s"%(sock.getpeername()))
+                    #remove sock from conns
+                    exit(0)
+                elif len(msg) == 5:
+                    if msg[0] == '\x08':
+                        pass
                     #if peer list
                         #create list of peers
                         #mark each peers state as unconnected,unsynched
@@ -104,25 +133,28 @@ class Node(object):
                         #if not connected to all peers after loop, abort
 
                         #send newPeer req to all peers
-
+                    elif msg[0] == '\x06':
+                        pass
                     #if storeFile req, store and ack
 
+                    elif msg[0] == '\xff':
+                        pass
                     #if all_done, mark peer as synched
-                        #send Join_Done to all peers
-                            #if a peer closed connection, set reminder to reconnect to it
-                        #enter main loop
-
-                #if there is a new inbound connection, accept it
-                    #put on unidentified list
-
-                #if there is a new message from unidentified list
-                    #read it, if client, respond EBUSY
-                        #put on client list
-
+                        #if all peers are synched
+                            #send Join_Done to all peers
+                                #if a peer closed connection, set reminder to reconnect to it
+                            #enter main loop
+                    else: 
+                else:
+                    print("Incomplete message header received, error!")
+                    exit(0)
 
     def main_loop(self):
         pass
         #bind server socket (if not already bound)
+
+        #print "entered main loop"
+        #print "++>"
 
         #while true:
             #use select to check if server socket has inbound conn
@@ -144,6 +176,8 @@ class Node(object):
 
             #use select to check client conns for message
                 #if new message, process command
+
+            #use select to check if you can read from user input
 
             #if a peer comes back online
                 #check if there are any hinted handoffs that need to be handled

@@ -6,6 +6,7 @@ from node import Node
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--peer', help='Hostname of a known peer in the system')
+    parser.add_argument('--peer_port', help='Port used by a known peer in the system')
     parser.add_argument('--port', default=13337, type=int, help='TCP port number for server socket')
     parser.add_argument('--qfrac', default=0.34, type=float, help='Fraction of peers on which data will be replicated')
     parser.add_argument('--sq_write_n', default=0.34, type=float, help='Min number of confirmed peers in a put operation with sloppy quorum')
