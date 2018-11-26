@@ -4,6 +4,7 @@ from storage import Storage
 from ring import Ring
 from math import floor
 import select
+import sys
 
 import messages
 
@@ -151,36 +152,68 @@ class Node(object):
 
     def main_loop(self):
         pass
-        #bind server socket (if not already bound)
 
-        #print "entered main loop"
-        #print "++>"
+        print("entered main loop")
+        print("++>")
+        sys.stdout.flush()
 
-        #while true:
+        while True:
+
             #use select to check if server socket has inbound conn
+            if select.select([self.tcp_socket],[],[],0)[0]:
                 #if so, accept connection
-                    #put on unidentified conns list
+                (sock,addr) = self.tcp_socket.accept()
+                #put on unidentified conns list
+                self.unidentified_sockets.append(sock)
 
             #use select to check unidentified conns list
+            if self.unidentified_sockets:
+                readable=select.select(self.unidentified_sockets,[],[],0)[0]
                 #if new message from conn
+                if readable:
                     #read it and determine connection type
+                    sock=readable[0]
+                    msg=sock.recv(5)
+
+                    if msg == '':
+                        print("unidentified connection closed.")
+                    elif len(msg) == 5:
+
                         #if new client add to client conns
                         #if new peer, add to joining_peers
                             #if not already in the process of adding a peer
                             #ask all peers if you can add a peer
                             #set up timeout and a container to store responses
+                    else: 
+                        print("Incomplete message header, error?\nHow do I handle this?")
+            
 
             #use select to check peer conns for message
+            if self.peer_sockets:
+                readable=select.select(
+                    list(self.peer_sockets.values()),[],[],0
+                )[0]
+
+                if readable:
                 #if new message from conn
                     #read it and process command
 
-            #use select to check client conns for message
-                #if new message, process command
-
             #use select to check if you can read from user input
+            readable=select.select([sys.stdin.fileno()],[],[],0)[0]
+
+            if readable:
+                user_cmd=input()
+                self._process_command(user_cmd)
 
             #if a peer comes back online
                 #check if there are any hinted handoffs that need to be handled
+
+            #Lets save this for last, I'm going to make it so that as part of
+            #the main event loop, the server reads 'client' commands from stdin
+            #so each node instance also functions as a client
+            #use select to check client conns for message
+                #if new message, process command
+
 
     def _process_message(self, data, sender):
         data_tuple = messages._unpack_message(data)
