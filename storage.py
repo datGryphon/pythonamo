@@ -46,11 +46,12 @@ from copy import deepcopy
 
 
 def h(fname):
-    return hashlib.sha1(fname).digest()
+    return hashlib.sha1(fname.encode('utf-8')).hexdigest()
 
 
 def toUni(hash_digest):
-    return u''.join([u'{:02x}'.format(ord(c)) for c in hash_digest])
+    # return u''.join([u'{:02x}'.format(ord(c)) for c in hash_digest])
+    return hash_digest
 
 
 class Storage(object):
@@ -92,7 +93,7 @@ class Storage(object):
         # print("Storing file: ", uHash, version, file)
 
         c.execute('''INSERT INTO storage (hash, version, file) VALUES (?,?,?);''',
-                  (uHash, sql.Binary('%s' % version), sql.Binary(file)))
+                  (uHash,'%s' % version, file.encode('utf-8')))
 
         self.db.commit()
 
@@ -104,7 +105,7 @@ class Storage(object):
         c.execute('''SELECT * FROM storage WHERE hash=?;''', (uHash,))
         rows = c.fetchall()
 
-        return self.sortData([[eval('%s' % (r[2])), '%s' % (r[3])] for r in rows]) if rows is not None else None
+        return self.sortData([[eval('%s' % (r[2])), r[3]] for r in rows]) if rows is not None else None
 
     # remove all instances of a given hash from the db
     def remFile(self, hash_digest):
@@ -128,8 +129,8 @@ class Storage(object):
                 vec2[key] = 0;
 
             # convert to tuple list for sorting
-        vec1 = vec1.items()
-        vec2 = vec2.items()
+        vec1 = list(vec1.items())
+        vec2 = list(vec2.items())
         # sort key/val pairs by server name
         vec1.sort(key=(lambda x: x[0]))
         vec2.sort(key=(lambda x: x[0]))
@@ -181,6 +182,9 @@ if __name__ == '__main__':
 
     # concurrent write operations by s1 and s2
     prev = db.getFile(h('testFile'))[0][0]
+
+    print(db.getFile(h('testFile')))
+
     db.storeFile(h('testFile'), 's1', prev, 'This is a test file 1')
     db.storeFile(h('testFile'), 's2', prev, 'This is a test file 2')
 

@@ -105,37 +105,37 @@ class Node(object):
                 #put on unidentified conns list
                 self.unidentified_sockets.append(sock)
 
-            #use select to check unidentified conns list
-            if self.unidentified_sockets:
-                readable=select.select(self.unidentified_sockets,[],[],0)[0]
-                #if new message from conn
-                if readable:
-                    #read it and determine connection type
-                    sock=readable[0]
-                    msg=sock.recv(5)
+            # #use select to check unidentified conns list
+            # if self.unidentified_sockets:
+            #     readable=select.select(self.unidentified_sockets,[],[],0)[0]
+            #     #if new message from conn
+            #     if readable:
+            #         #read it and determine connection type
+            #         sock=readable[0]
+            #         msg=sock.recv(5)
 
-                    if msg == '':
-                        print("unidentified connection closed.")
-                    elif len(msg) == 5:
-                        if msg[0] == '\x01':
-                        #if new peer, add to joining_peers
-                            print("New peer trying to connect %s"%(sock.getpeername()[0]))
-                            self.joining_peers[sock.getpeername()[0]]=sock
+            #         if msg == '':
+            #             print("unidentified connection closed.")
+            #         elif len(msg) == 5:
+            #             if msg[0] == '\x01':
+            #             #if new peer, add to joining_peers
+            #                 print("New peer trying to connect %s"%(sock.getpeername()[0]))
+            #                 self.joining_peers[sock.getpeername()[0]]=sock
 
-                            if self.currently_adding_peer:
-                                #set random backoff timer
-                                pass
-                            else:
-                                #if not already in the process of adding a peer
-                                #ask all peers if you can add a peer
-                                pass
-                                #set up timeout and a container to store responses
+            #                 if self.currently_adding_peer:
+            #                     #set random backoff timer
+            #                     pass
+            #                 else:
+            #                     #if not already in the process of adding a peer
+            #                     #ask all peers if you can add a peer
+            #                     pass
+            #                     #set up timeout and a container to store responses
 
-                        elif msg[0] == '\x02':
-                        #if new client add to client conns (will do later if time)
-                            pass
-                    else: 
-                        print("Incomplete message header, error?\nHow do I handle this?")
+            #             elif msg[0] == '\x02':
+            #             #if new client add to client conns (will do later if time)
+            #                 pass
+            #         else: 
+            #             print("Incomplete message header, error?\nHow do I handle this?")
             
 
             #use select to check peer conns for message
@@ -152,36 +152,28 @@ class Node(object):
                     #if its a forwarded request
                         #Extract the contained message
 
-                        #call the correct request handling code (put or get)
-                            #give sendBackTo=sock.getpeername() as an argument
+                        #start_request(type,args,sendbackto=sock.getpeername()[0])
                     #elif its a response to a forwarded request 
                         #update request
                     #elif its a storeFile req
-                    #elif its a I stored that response
+                        #take action and acknowledge
+                    #elif its a StoreFileResponse
                         #update_request
                     #elif its a getFile req
-                    #elif its a getFile response
+                        #get result and respond
+                    #elif its a getFileResponse
                         #updata_request
+                    #elif add node
+                        #call self.register_node
                     #elif remove node
-
-
-            #use select to check if you can read from user input
-            readable=select.select([sys.stdin.fileno()],[],[],0)[0]
-
-            if readable:
-                user_cmd=input()
-                #pass argument that says sendBackTo=stdin
-                self._process_command(user_cmd)
-                print("++>",end='',flush=True)
+                        #call self.remove_node
                 
             #if a peer comes back online
-                #check if there are any hinted handoffs that need to be handled
+                #check if there are any hinted handoffs that you need to get
 
-            #Lets save this for last, I'm going to make it so that as part of
-            #the main event loop, the server reads 'client' commands from stdin
-            #so each node instance also functions as a client
             #use select to check client conns for message
                 #if new message, process command
+                    
 
 
     def _process_message(self, data, sender):
@@ -270,28 +262,29 @@ class Node(object):
     #then when the response is returned, complete_request will send the 
     #output to the correct client or peer (or stdin)
     def start_request(self, rtype, args, sendBackTo='stdin'):
-        req = Request(rtype,args,sendBackTo)
-        self.ongoing_requests.append(req)
+        req = Request(rtype,args,sendBackTo)    #create request obj
+        self.ongoing_requests.append(req)       #set as ongoing
 
+        data_nodes = self.membership_ring.get_node_for_key(self.sloppy_Qsize)
 
-        #send the correct request to the correct peers
-        #if get or put
-            #send the getFile or storeFile message to everyone in the replication
-            #range
-        #else, forward the request to the target node
-            #send a client getRequest to a peer in the correct range
-
+        #Find out if you can respond to this request
         if rtype == 'get':
+            #send the getFile message to everyone in the replication range
             result = self.db.getFile(args)
             my_resp = getFileResponse(args, result)
             #add my information to the request
             self.update_request(my_resp,self.my_hostname,req)
         elif rtype == 'put':
+            #send the getFile message to everyone in the replication range
             self.db.storeFile(args[0],self.my_hostname,args[2],args[1])
             my_resp = storeFileResponse(args[0],args[1],args[2])
             #add my information to the request
             self.update_request(my_resp,self.my_hostname,req)
-            
+        else:    
+        #else, forward the request to the target node
+            #send a client getRequest to a peer in the correct range
+
+
         #return to main event loop
 
 

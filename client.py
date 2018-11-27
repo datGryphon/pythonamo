@@ -24,3 +24,5 @@ while True:
 
     msg = messages.client_message(user_input)
     s.sendall(msg)
+
+    
