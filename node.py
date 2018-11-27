@@ -24,6 +24,8 @@ class Node(object):
         if self.is_leader:
             self.membership_ring.add_node(leader_hostname, leader_hostname)
 
+        self.currently_adding_peer=False
+
         self.sloppy_Qfrac = sloppy_Qfrac  # fraction of total members to replicate on
 
         # sets self.sloppy_Qsize to the number of replications required
@@ -151,7 +153,8 @@ class Node(object):
                     exit(0)
 
     def main_loop(self):
-        pass
+
+        self.ongoing_requests=[]
 
         print("entered main loop")
         print("++>")
@@ -178,12 +181,23 @@ class Node(object):
                     if msg == '':
                         print("unidentified connection closed.")
                     elif len(msg) == 5:
-
-                        #if new client add to client conns
+                        if msg[0] == '\x01':
                         #if new peer, add to joining_peers
-                            #if not already in the process of adding a peer
-                            #ask all peers if you can add a peer
-                            #set up timeout and a container to store responses
+                            print("New peer trying to connect %s"%(sock.getpeername()[0]))
+                            self.joining_peers[sock.getpeername()[0]]=sock
+
+                            if self.currently_adding_peer:
+                                #set random backoff timer
+                                pass
+                            else:
+                                #if not already in the process of adding a peer
+                                #ask all peers if you can add a peer
+                                pass
+                                #set up timeout and a container to store responses
+
+                        elif msg[0] == '\x02'
+                        #if new client add to client conns (will do later if time)
+                            pass
                     else: 
                         print("Incomplete message header, error?\nHow do I handle this?")
             
@@ -198,12 +212,29 @@ class Node(object):
                 #if new message from conn
                     #read it and process command
 
+                    #if its a forwarded request
+                        #Extract the contained message
+
+                        #call the correct request handling code (put or get)
+                            #give sendBackTo=sock.getpeername() as an argument
+
+                    #elif its a storeFile req
+                    #elif its a I stored that response
+
+                    #elif its a getFile req
+                    #elif its a getFile response
+
+                    #elif remove node
+
+
             #use select to check if you can read from user input
             readable=select.select([sys.stdin.fileno()],[],[],0)[0]
 
             if readable:
                 user_cmd=input()
-                self._process_command(user_cmd)
+                #pass argument that says sendBackTo=stdin
+                self.start_request(user_cmd)
+
 
             #if a peer comes back online
                 #check if there are any hinted handoffs that need to be handled
@@ -214,6 +245,7 @@ class Node(object):
             #use select to check client conns for message
                 #if new message, process command
 
+    def start_request(self, user_cmd, sendBackTo='stdin'):
 
     def _process_message(self, data, sender):
         data_tuple = messages._unpack_message(data)
@@ -222,12 +254,13 @@ class Node(object):
             print(result)
 
     def _process_command(self, user_input):
-        """Process commands if node is the leader. Else, forward it to the leader."""
+        """Process commands"""
         if not user_input:
             return ""
 
-        if not self.is_leader:
-            return self.forward_request_to_leader(user_input)
+        # no leader anymore, after a node has been boostrapped, being the leader means nothing
+        # if not self.is_leader:
+        #     return self.forward_request_to_leader(user_input)
 
         # First word is command. Rest are then arguments.
         command, *data = user_input.split(" ")
@@ -237,6 +270,8 @@ class Node(object):
         # Call the function associated with the command in command_registry
         return self.command_registry[command](data)
 
+#changed the way peers are connected to be initiated by the new peer
+#So I dont think we need this function
     def register_node(self, data):
         """Add node to membership. data[0] must be the hostname"""
         if not data:
@@ -264,6 +299,7 @@ class Node(object):
 
         return "added " + data[0] + " to ring"
 
+#Send a remove node message to everyone and if you are that node, shutdown
     def remove_node(self, data):
         if not data:
             return "Error: hostname required"
