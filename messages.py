@@ -12,13 +12,13 @@ import struct
 
 	03 -- clientPut
 
+	30 -- clientPutResponse
+
 	30 -- putResponse
 
 	04 -- clientGet
 
-	40 -- getResponse
-
-	05 -- getResponse
+	40 -- clientGetResponse
 
 	06 -- clientRemoveNode
 
@@ -56,18 +56,22 @@ def newPeerReq(address):
 def clientConnectReq():
 	return b'\x02'+struct.pack('!i',0)
 
-def clientPut(name,value,context):
+def putMessage(name,value,context):
 	data=pickle.dumps((name,value,context))
 	return b'\x03'+struct.pack('!i',len(data))+data
 
-def clientGet(name):
+def putMessageResponse(name,value,context):
+	data=pickle.dumps((name,value,context))
+	return b'\x30'+struct.pack('!i',len(data))+data
+
+def getMessage(name):
 	data=pickle.dumps(name)
 	return b'\x04'+struct.pack('!i',len(data))+data
 
-#values is the sorted list of (context,value) pairs
-def getResponse(values):
-	data = pickle.dumps(values)
-	return b'\x05'+struct.pack('!i',len(data))+data
+#send back the file name and the combined list of values
+def getFileResponse(name,result):
+	data=pickle.dumps((name,result))
+	return b'\x40'+struct.pack('!i',len(data))+data
 
 def clientRemNode(name):
 	data=pickle.dumps(name)
@@ -77,9 +81,17 @@ def storeFile(name,value,context):
 	data=pickle.dumps((name,value,context))
 	return b'\x07'+struct.pack('!i',len(data))+data
 
+def storeFileResponse(name,value,context):
+	data=pickle.dumps((name,value,context))
+	return b'\x70'+struct.pack('!i',len(data))+data
+
 def getFile(name):
 	data=pickle.dumps(name)
 	return b'\x08'+struct.pack('!i',len(data))+data
+
+def getFileResponse(name,result):
+	data=pickle.dumps((name,result))
+	return b'\x80'+struct.pack('!i',len(data))+data
 
 def peerList(peers):	
 	data=pickle.dumps(peers)
