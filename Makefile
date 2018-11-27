@@ -11,4 +11,4 @@ stop-docker:
 	docker-compose down
 
 run-client-docker:
-	docker-compose up client1
+	docker-compose run client1
