@@ -1,74 +1,75 @@
+from collections import defaultdict
 from hashlib import md5
 import bisect
 
 
-# Reasonably dumb implementation to get started. vnodes may not work as expected when > 1.
-# todo: implement a proper hash ring with support for virtual nodes
 class Ring(object):
 
-    def __init__(self, vnodes=1):
+    def __init__(self, vnode_count=1, replica_count=0):
         """Create a new Ring.
 
-        :param vnodes: number of vnodes.
+        :param vnode_count: number of vnode_count.
+        :param replica_count: number of replicas for each key
         """
-        self.vnodes = vnodes
-        self._keys = []
+        self.vnode_count = vnode_count
+        self.replica_count = replica_count
+
+        # maps node_id to corresponding virtual nodes (stored as set)
+        self._vnode_mapping = defaultdict(set)
+
+        self._vnode_hashes = []
         self._nodes = {}
 
-        self._hash = lambda key: int(md5(key.encode('utf-8')).hexdigest(), 16)
+        self._generate_hash = lambda key: int(md5(key.encode('utf-8')).hexdigest(), 16)
+        self._generate_vnode_ids = lambda node_id: (node_id + '_' + str(i) for i in range(self.vnode_count))
 
-    def _repl_iterator(self, node_id):
-        """Given a node id, return an iterable of vnode hashes."""
+    def __setitem__(self, node_id, hostname):
+        """Add a node (and virtual nodes), given its id and hostname"""
+        for vnode_id in self._generate_vnode_ids(node_id):
+            vnode_hash = self._generate_hash(vnode_id)
 
-        return (self._hash("%s:%s" % (node_id, i)) for i in range(self.vnodes))
+            if vnode_hash in self._nodes:
+                raise ValueError("Node id %r is already present" % vnode_id)
+            self._nodes[vnode_hash] = hostname
+            bisect.insort(self._vnode_hashes, vnode_hash)
 
-    def __setitem__(self, node_id, node):
-        """Add a node, given its id and hostname.
-
-        The given node id is hashed among the number of vnodes.
-
-        """
-        for hash_ in self._repl_iterator(node_id):
-            if hash_ in self._nodes:
-                raise ValueError("Node id %r is already present" % node_id)
-            self._nodes[hash_] = node
-            bisect.insort(self._keys, hash_)
+            self._vnode_mapping[node_id].add(vnode_hash)
 
     def __delitem__(self, node_id):
         """Remove a node, given its id."""
 
-        for hash_ in self._repl_iterator(node_id):
-            # will raise KeyError for nonexistent node name
-            del self._nodes[hash_]
-            index = bisect.bisect_left(self._keys, hash_)
-            del self._keys[index]
+        vnode_hashes = self._vnode_mapping.get(node_id, None)
+        if not vnode_hashes:
+            raise ValueError("Node id not in the ring" % node_id)
 
-    #modified so that when number of replicas greater than 0
-    #returns list of all nodes that should store the data
-    #if n_rep == 0 functions as it did previously
-    def __getitem__(self, key, n_rep=0):
+        for vnode_hash in vnode_hashes:
+            del self._nodes[vnode_hash]
+            index = bisect.bisect_left(self._vnode_hashes, vnode_hash)
+            del self._vnode_hashes[index]
+
+    def _get_nearest_hash_index(self, key_hash):
+        """Given a hash value, returns the index of nearest hash in _vnode_hashes."""
+
+        nearest_hash_index = bisect.bisect(self._vnode_hashes, key_hash)
+        if nearest_hash_index == len(self._vnode_hashes):
+            return 0
+
+        return nearest_hash_index
+
+    def __getitem__(self, key):
         """Return a node hostname, given a key.
 
         The vnode with a hash value nearest but not less than that of the given
-        name is returned. If the hash of the given name is greater than the greatest
+        key is returned. If the hash of the given name is greater than the greatest
         hash, returns the lowest hashed node.
 
         """
-        hash_ = self._hash(key)
-        start = bisect.bisect(self._keys, hash_)
-        if start == len(self._keys):
-            start = 0
-
-        if n_rep != 0:
-            #if there are replicas, return the n_rep+1 nodes 
-            #starting with keys[start]
-            #add the list of keys to itself so the slice wraps around
-            return [ self._nodes[k] for k in (self._keys+self._keys)[start:start+n_rep+1] ]
-        else: #otherwise just send back the first node
-            return self._nodes[self._keys[start]]
+        key_hash = self._generate_hash(key)
+        hash_index = self._get_nearest_hash_index(key_hash)
+        return self._nodes[self._vnode_hashes[hash_index]]
 
     def __len__(self):
-        return len(self._nodes) // self.vnodes  # to account for vnodes
+        return len(self._nodes) // self.vnode_count  # to account for vnode_count
 
     # Helper functions to expose stable API
     def add_node(self, node_id, node_hostname):
@@ -77,23 +78,32 @@ class Ring(object):
     def remove_node(self, node_id):
         return self.__delitem__(node_id)
 
-    #modified so that when number of replicas greater than 0
-    #returns list of all nodes that should store the data
-    #if n_rep == 0 functions as it did previously
-    def get_node_for_key(self, key, n_rep=0):
-        return self.__getitem__(key,n_rep)
+    def get_node_for_key(self, key):
+        return self.__getitem__(key)
+
+    def get_replicas_for_key(self, key):
+        key_hash = self._generate_hash(key)
+        hash_index = self._get_nearest_hash_index(key_hash)
+
+        replica_list = []  # Only contains replicas, not the main node. len = self.replica_count
+        for x in range(hash_index + 1, hash_index + self.replica_count + 1):
+            index = x % len(self._vnode_hashes)  # wrap around the list
+            replica_list.append(self._nodes[self._vnode_hashes[index]])
+
+        return replica_list
 
 
 if __name__ == '__main__':
-    r = Ring()
+    r = Ring(vnode_count=5, replica_count=3)
 
     r.add_node('node1', "node1.hostname")
     r.add_node('node2', "node2.hostname")
     r.add_node('node3', "node3.hostname")
-    r.add_node('node4',"node4.hostname")
+    r.add_node('node4', "node4.hostname")
+    r.add_node('node5', "node5.hostname")
 
     # Try inserting a key
-    target_hostname = r.get_node_for_key("key4")
+    target_hostname = r.get_node_for_key("key1")
     print(target_hostname)  # got node2hostname
     # proceed to put data in target_hostname
 
@@ -103,22 +113,10 @@ if __name__ == '__main__':
     target_hostname = r.get_node_for_key("key6")
     print(target_hostname)  # got node3hostname
 
-    target_hostname = r.get_node_for_key("key0")
+    target_hostname = r.get_node_for_key("key1")
     print(target_hostname)  # got node1hostname
+
+    target_hostnames = r.get_replicas_for_key("key1")
+    print(target_hostnames)  # got node1hostname
 
     print(len(r))
-
-    #add a 4th node to the ring
-
-    #if the data is replicated on 2 other servers they would be the 
-    #next two lar
-    target_hostname = r.get_node_for_key("key6",2)
-    print(target_hostname)  # got node1hostname
-
-    target_hostname = r.get_node_for_key("key0",2)
-    print(target_hostname)  # got node1hostname
-
-    r.remove_node('node1')
-    target_hostname = r.get_node_for_key("key0",2)
-    print(target_hostname)  # got node3hostname
-
