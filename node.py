@@ -176,17 +176,6 @@ class Node(object):
             self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
             return "added " + data[0] + " to ring"
 
-        # I dont think we need totem, we just need local failure detection
-        # if a client sends remove node command, then we will manually
-        # transfer necessary files away from the peer, before sending
-        # a message to every peer to remove that node, when the node in
-        # question gets that final remove message, it should kill itself.
-
-        # likewise, for adding a peer, transfer all necessary files to new peer
-        # if peer revceives all the files, send add message to all peers
-        # expect replies from at least N/2
-        # send commit message to all peers
-
         self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
 
         self.update_SQsize()
@@ -257,45 +246,73 @@ class Node(object):
             msg = forwardedReq(req)
             #forward message to target node
 
+    def find_req_for_msg(self,msg,sender):
+        contents=_unpack_message(msg[5:])
+        #find correct request corresponding to message
+        #by checking the response id (aka timestamp of the req creation)
+        if msg[0] == '\x70':
+            req_ts = contents[3]
+        elif msg[0] == '\x80':
+            req_ts = contents[2]
+        #or by checking matching the response id of the msg's req's prev_req.time
+        else:  
+            req_ts = contents.previous_request.time_created
+
+        return list(filter(
+            lambda r: r.time_created == req_ts, self.ongoing_requests
+        ))
+
     #after a \x70, \x80 or \x0B is encountered from a peer, this method is called
     def update_request(self,msg,sender,request=None):
-        # if not request:
-            #find correct request corresponding to message
-            #if 70 or 80
-            #by checking the response id (aka timestamp of the req creation)
-            #or by checking matching the response id of the msg's req's prev_req.time
+        if not request:
+            request=self.find_req_for_msg(msg,sender)
+            if not request:
+                print("Could not find request for message, %s was probably too slow"%(sender))
+                return
+            request=request[0]
 
-        #request.responses[sender]=msg
-        
-        #if it is a \x0B
-            # self.complete_request(request)
-        #elif its a \x70 or \x80
+        request.responses[sender]=msg
+        print("Stored response from ")
+        if msg[0] == '\x0B':
+            self.complete_request(request)
+        else:#its a \x70 or \x80
             #number of responses required is min of (sloppy_R/W and the number of replicas)
-
-            #if you have the min number of responses
-                #complete_message(req)
+            minNumResp = min(
+                self.sloppy_Qsize, 
+                self.sloppy_R if msg[0] == '\x80' else self.sloppy_W 
+            )
+            if len(request.responses) >= minNumResp:
+                self.complete_message(req)
 
     def complete_request(self,request):
         pass
-        #if get
+        if request.type == 'get':
+            pass
             #if sendbackto is a peer
                 #this is a response to a for_*
                 #send the whole request object back to the peer
             #else
                 #compile results from responses and send them to client
-        #elif put
+        elif request.type == 'put':
+            pass
             #if sendback is a peer
                 #send the whole request object back to the peer
-        #else
+        else:
+            pass
             #if sendbackto is a peer
                 #send the response object you got back to the peer
                     #from request.responses (it is the put or get they need)
+                    #if you need to, make req.prev_req = req.prev_req.prev_req
+                    #so it looks like you did the request yourself
             #else
                 #peer is sending you back the completed put or get
                 #if put send back success
                 #else, compile results and send back
 
         #remove request from ongoing list
+        self.ongoing_requests = list(filter(
+            lambda r: r != request, self.ongoing_requests
+        ))
 
     def put_data(self, data, sendBackTo):
         if len(data) != 3:
@@ -373,24 +390,3 @@ class Node(object):
         start_request('for_get',(target_node,data),sendBackTo=sendBackTo)
 
         return "forwarded get request for %s to node %s" % (target_node, key)
-
-    # def delete_data(self, data):
-    #     """Retrieve V for given K from the database. data[0] must be the key"""
-    #     if not data:
-    #         return "Error: key required"
-
-    #     target_node = self.membership_ring.get_node_for_key(data[0])
-
-    #     if target_node == self.my_hostname:
-    #         self.db.remFile(data[0])
-    #         return "deleted %s locally [%s]" % (data[0], self.my_hostname)
-    #     else:
-    #         return self._delete_data_from_peer(target_node, data[0])
-
-    # def _delete_data_from_peer(self, target_node, key):
-    #     return "deleted %s from node %s" % (target_node, key)
-
-    # # todo: If a command is given to a follower, forward it to the leader. Come to it if time permits.
-    # def forward_request_to_leader(self, user_input):
-    #     """When a command is passed to the leader"""
-    #     return "Forwarded request to " + self.leader_hostname

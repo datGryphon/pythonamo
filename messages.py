@@ -65,11 +65,11 @@ def putMessageResponse(name,value,context):
 	return b'\x30'+struct.pack('!i',len(data))+data
 
 def getMessage(name):
-	data=pickle.dumps(name)
+	data=pickle.dumps((name))
 	return b'\x04'+struct.pack('!i',len(data))+data
 
 #send back the file name and the combined list of values
-def getFileResponse(name,result):
+def getResponse(name,result):
 	data=pickle.dumps((name,result))
 	return b'\x40'+struct.pack('!i',len(data))+data
 
@@ -77,20 +77,20 @@ def clientRemNode(name):
 	data=pickle.dumps(name)
 	return b'\x06'+struct.pack('!i',len(data))+data
 
-def storeFile(name,value,context):
-	data=pickle.dumps((name,value,context))
+def storeFile(name,value,context,stamp):
+	data=pickle.dumps((name,value,context,stamp))
 	return b'\x07'+struct.pack('!i',len(data))+data
 
-def storeFileResponse(name,value,context):
-	data=pickle.dumps((name,value,context))
+def storeFileResponse(name,value,context,stamp):
+	data=pickle.dumps((name,value,context,stamp))
 	return b'\x70'+struct.pack('!i',len(data))+data
 
-def getFile(name):
-	data=pickle.dumps(name)
+def getFile(name,stamp):
+	data=pickle.dumps((name,stamp))
 	return b'\x08'+struct.pack('!i',len(data))+data
 
-def getFileResponse(name,result):
-	data=pickle.dumps((name,result))
+def getFileResponse(name,result,stamp):
+	data=pickle.dumps((name,result,stamp))
 	return b'\x80'+struct.pack('!i',len(data))+data
 
 def peerList(peers):	
