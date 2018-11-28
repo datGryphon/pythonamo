@@ -97,11 +97,11 @@ def peerList(peers):
 	data=pickle.dumps(peers)
 	return b'\x09'+struct.pack('!i',len(data))+data
 
-def forwardedClientReq(msg):
+def forwardedReq(msg):
 	data=pickle.dumps(msg)
 	return b'\x0A'+struct.pack('!i',len(data))+data
 
-def responseForClient(msg):
+def responseForForward(msg):
 	data=pickle.dumps(msg)
 	return b'\x0B'+struct.pack('!i',len(data))+data
 

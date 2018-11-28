@@ -63,10 +63,8 @@ class Node(object):
 
         #lists of connections
         self.unidentified_sockets=[]
-        self.client_sockets={}
-        self.joining_peers={}
         self.peer_sockets={}
-        self.peer_server_addresses=[]
+        self.client_sockets={}
 
     def accept_connections(self):
         #moved to __init__
@@ -105,39 +103,6 @@ class Node(object):
                 #put on unidentified conns list
                 self.unidentified_sockets.append(sock)
 
-            # #use select to check unidentified conns list
-            # if self.unidentified_sockets:
-            #     readable=select.select(self.unidentified_sockets,[],[],0)[0]
-            #     #if new message from conn
-            #     if readable:
-            #         #read it and determine connection type
-            #         sock=readable[0]
-            #         msg=sock.recv(5)
-
-            #         if msg == '':
-            #             print("unidentified connection closed.")
-            #         elif len(msg) == 5:
-            #             if msg[0] == '\x01':
-            #             #if new peer, add to joining_peers
-            #                 print("New peer trying to connect %s"%(sock.getpeername()[0]))
-            #                 self.joining_peers[sock.getpeername()[0]]=sock
-
-            #                 if self.currently_adding_peer:
-            #                     #set random backoff timer
-            #                     pass
-            #                 else:
-            #                     #if not already in the process of adding a peer
-            #                     #ask all peers if you can add a peer
-            #                     pass
-            #                     #set up timeout and a container to store responses
-
-            #             elif msg[0] == '\x02':
-            #             #if new client add to client conns (will do later if time)
-            #                 pass
-            #         else: 
-            #             print("Incomplete message header, error?\nHow do I handle this?")
-            
-
             #use select to check peer conns for message
             if self.peer_sockets:
                 readable=select.select(
@@ -173,16 +138,16 @@ class Node(object):
 
             #use select to check client conns for message
                 #if new message, process command
-                    
+
 
 
     def _process_message(self, data, sender):
         data_tuple = messages._unpack_message(data)
         if data_tuple[0] == 0:  # Message from client, second element should be user_input string
-            result = self._process_command(data_tuple[1])
+            result = self._process_command(data_tuple[1],sendBackTo=sender)
             print(result)
 
-    def _process_command(self, user_input, sendBackTo='stdin'):
+    def _process_command(self, user_input, sendBackTo):
         """Process commands"""
         if not user_input:
             return ""
@@ -256,101 +221,96 @@ class Node(object):
     #   type='get', args='hash'
     #   type='put', args=('hash','value',{context})
     #   type='for_get', args=(target_node,'hash')
-    #   type='for_put', args=(target_node, ('hash','value',{context}))
+    #   type='for_put', args=(target_node, 'hash','value',{context})
     #Type can be 'put', 'get', 'for_put', 'for_get'
     #'for_*' if for requests that must be handled by a different peer
     #then when the response is returned, complete_request will send the 
     #output to the correct client or peer (or stdin)
-    def start_request(self, rtype, args, sendBackTo='stdin'):
+    def start_request(self, rtype, args, sendBackTo,prev_req=None):
         req = Request(rtype,args,sendBackTo)    #create request obj
         self.ongoing_requests.append(req)       #set as ongoing
 
-        data_nodes = self.membership_ring.get_node_for_key(self.sloppy_Qsize)
+        # data_nodes = self.membership_ring.get_node_for_key(self.sloppy_Qsize)
+        target_node= self.membership_ring.get_node_for_key(req.hash)
 
         #Find out if you can respond to this request
         if rtype == 'get':
-            #send the getFile message to everyone in the replication range
+            #add my information to the request
             result = self.db.getFile(args)
             my_resp = getFileResponse(args, result)
-            #add my information to the request
             self.update_request(my_resp,self.my_hostname,req)
-        elif rtype == 'put':
             #send the getFile message to everyone in the replication range
+
+        elif rtype == 'put':
             self.db.storeFile(args[0],self.my_hostname,args[2],args[1])
             my_resp = storeFileResponse(args[0],args[1],args[2])
             #add my information to the request
             self.update_request(my_resp,self.my_hostname,req)
-        else:    
-        #else, forward the request to the target node
-            #send a client getRequest to a peer in the correct range
+            #send the storeFile message to everyone in the replication range
 
+        else:
+            msg = forwardedReq(req)
+            #forward message to target node
 
-        #return to main event loop
+    #after a \x70, \x80 or \x0B is encountered from a peer, this method is called
+    def update_request(self,msg,sender,request=None):
+        # if not request:
+            #find correct request corresponding to message
+            #if 70 or 80
+            #by checking the response id (aka timestamp of the req creation)
+            #or by checking matching the response id of the msg's req's prev_req.time
 
-
-    def update_request(self,msg,sender,request):
-        pass
-        #after a \x70, \x80 or \x0B is encountered from a peer, this method is called
-
+        #request.responses[sender]=msg
+        
         #if it is a \x0B
-            #remove the message from the payload
-
-            #if sendBackto != stdin
-                #send the extracted message to the correct client
-            #else, pint the contents of the message to the console
-
-            #remove the ongoing request
-        #elif its a \x70
-            #set req.responses[sender]=msg
-
+            # self.complete_request(request)
+        #elif its a \x70 or \x80
             #number of responses required is min of (sloppy_R/W and the number of replicas)
 
             #if you have the min number of responses
                 #complete_message(req)
 
-        #return to main event loop
-
     def complete_request(self,request):
         pass
-
-        #if it is a get message:
-            #compile the results of the responses
-            #into one unique tuple list
-        #else, result = 'success'
-
-
-        #if req.sendbackto == stdin
-            #print results to console
-        #else
-            #create client response message
-
+        #if get
             #if sendbackto is a peer
-                #encapsulate client response inside of a \x0B
-
-            #send message to sendbackto
+                #this is a response to a for_*
+                #send the whole request object back to the peer
+            #else
+                #compile results from responses and send them to client
+        #elif put
+            #if sendback is a peer
+                #send the whole request object back to the peer
+        #else
+            #if sendbackto is a peer
+                #send the response object you got back to the peer
+                    #from request.responses (it is the put or get they need)
+            #else
+                #peer is sending you back the completed put or get
+                #if put send back success
+                #else, compile results and send back
 
         #remove request from ongoing list
-        #return to main event loop
 
-
-    def put_data(self, data, sendBackTo='stdin'):
-        """Add K,V pair to the database. data[0] should be key, concat(data[1:]) will be value"""
+    def put_data(self, data, sendBackTo):
         if len(data) != 3:
-            return "Error: Invalid opperands\nInput: [<key>,<prev version>,<value>]"
+            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
 
         key = data[0]
         prev = data[1]
         value = data[2]
         target_node = self.membership_ring.get_node_for_key(data[0])
 
-        if target_node == self.my_hostname:
-
-            # todo: sloppy quorum handled by start_req
-            start_request('put',data,sendBackTo=sendBackTo)
-
-            return "started put request for %s:%s locally [%s]" % (key, value, self.my_hostname)
-        else:
-            return self._send_data_to_peer(target_node,data,sendBackTo)
+        if not self.is_leader:
+            #forward request to leader for client
+            return self._send_data_to_peer(self.leader_hostname,data,sendBackTo)
+        else: #I am the leader
+            if target_node == self.my_hostname:
+                # I'm processing a request for a client directly
+                self.start_request('put',data,sendBackTo=sendBackTo)
+                return "started put request for %s:%s locally [%s]" % (key, value, self.my_hostname)
+            else:# I am forwarding a request from the client to the correct node
+                return self._send_data_to_peer(target_node,data,sendBackTo)
 
     def get_data(self, data, sendBackTo='stdin'):
         """Retrieve V for given K from the database. data[0] must be the key"""
@@ -359,33 +319,47 @@ class Node(object):
 
         target_node = self.membership_ring.get_node_for_key(data[0])
 
+        #if I can do it myself
         if target_node == self.my_hostname:
-
-            start_request('get',data,sendBackTo=sendBackTo)
-
+            #I am processing a request for a client directly
+            self.start_request('get',data,sendBackTo=sendBackTo)
             return "started get request for %s:%s locally [%s]" % (
                 data[0], self.db.getFile(data[0]), self.my_hostname
             )
-        else:
+        else:#forward the client request to the peer incharge of req
             return self._get_data_from_peer(target_node, data[0])
 
-    def delete_data(self, data):
-        """Retrieve V for given K from the database. data[0] must be the key"""
-        if not data:
-            return "Error: key required"
-
-        target_node = self.membership_ring.get_node_for_key(data[0])
-
-        if target_node == self.my_hostname:
-            self.db.remFile(data[0])
-            return "deleted %s locally [%s]" % (data[0], self.my_hostname)
-        else:
-            return self._delete_data_from_peer(target_node, data[0])
+    def handle_forwarded_req(self,prev_req,sendBackTo):
+        target_node = self.membership_ring.get_node_for_key(prev_req.hash)
+        #someone forwarded you a put request
+        #if you are the leader, check if you can takecare of it, else, 
+        #start a new put request with this request as the previous one
+        if prev_req.type == 'put' or prev_req.type == 'for_put':
+            if self.is_leader:
+                if target_node == self.my_hostname:
+                    args=(prev_req.hash, prev_req.value, prev_req.context)
+                    self.start_request('put',args,sendBackTo,previous_request=prev_req)
+                    return "handling forwarded put request locally"
+                else:
+                    args=(target_node,prev_req.hash, 
+                        prev_req.value, prev_req.context
+                    )
+                    self.start_request('for_put',args,sendBackTo,prev_req)
+                    return "Forwarded Forwarded put request to correct node"
+            else: #the leader is forwarding you a put
+                args=(prev_req.hash, prev_req.value, prev_req.context)
+                self.start_request('put',args,sendBackTo,previous_request=prev_req)
+                return "handling forwarded put request locally"
+        #someone forwarded you a get request, you need to take care of it
+        #start new get request with this as the previous one
+        else: #type is get or for_get
+            start_request('get',prev_req.hash,sendBackTo,prev_req)
+            return "handling forwarded get request locally"
 
     def _send_data_to_peer(self, target_node, data, sendBackTo='stdin'):
 
         #create for_put request
-        start_request('for_put',(target_node,data),sendBackTo=sendBackTo)
+        start_request('for_put',(target_node,)+data,sendBackTo=sendBackTo)
 
         return "forwarded put request for %s:%s to node %s" % (key, value, target_node)
 
@@ -395,10 +369,23 @@ class Node(object):
 
         return "forwarded get request for %s to node %s" % (target_node, key)
 
-    def _delete_data_from_peer(self, target_node, key):
-        return "deleted %s from node %s" % (target_node, key)
+    # def delete_data(self, data):
+    #     """Retrieve V for given K from the database. data[0] must be the key"""
+    #     if not data:
+    #         return "Error: key required"
 
-    # todo: If a command is given to a follower, forward it to the leader. Come to it if time permits.
-    def forward_request_to_leader(self, user_input):
-        """When a command is passed to the leader"""
-        return "Forwarded request to " + self.leader_hostname
+    #     target_node = self.membership_ring.get_node_for_key(data[0])
+
+    #     if target_node == self.my_hostname:
+    #         self.db.remFile(data[0])
+    #         return "deleted %s locally [%s]" % (data[0], self.my_hostname)
+    #     else:
+    #         return self._delete_data_from_peer(target_node, data[0])
+
+    # def _delete_data_from_peer(self, target_node, key):
+    #     return "deleted %s from node %s" % (target_node, key)
+
+    # # todo: If a command is given to a follower, forward it to the leader. Come to it if time permits.
+    # def forward_request_to_leader(self, user_input):
+    #     """When a command is passed to the leader"""
+    #     return "Forwarded request to " + self.leader_hostname
