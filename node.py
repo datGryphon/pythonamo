@@ -230,11 +230,13 @@ class Node(object):
         req = Request(rtype,args,sendBackTo)    #create request obj
         self.ongoing_requests.append(req)       #set as ongoing
 
-        # data_nodes = self.membership_ring.get_node_for_key(self.sloppy_Qsize)
         target_node= self.membership_ring.get_node_for_key(req.hash)
 
         #Find out if you can respond to this request
         if rtype == 'get':
+            data_nodes = self.membership_ring.get_node_for_key(
+                args,self.sloppy_Qsize-1
+            )
             #add my information to the request
             result = self.db.getFile(args)
             my_resp = getFileResponse(args, result)
@@ -242,6 +244,9 @@ class Node(object):
             #send the getFile message to everyone in the replication range
 
         elif rtype == 'put':
+            data_nodes = self.membership_ring.get_node_for_key(
+                args[0],self.sloppy_Qsize-1
+            )
             self.db.storeFile(args[0],self.my_hostname,args[2],args[1])
             my_resp = storeFileResponse(args[0],args[1],args[2])
             #add my information to the request

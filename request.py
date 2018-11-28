@@ -9,7 +9,7 @@ class Request(object):
 		self.type=rtype	
 		self.sendBackTo=sendBackTo
 		self.responses={}
-		self.previous_request=None
+		self.previous_request=previous_request
 
 		if rtype == 'put':
 			self.forwardedTo=None
