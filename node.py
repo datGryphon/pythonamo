@@ -12,7 +12,7 @@ from request import Request
 
 class Node(object):
 
-    def __init__(self, is_leader, leader_hostname, leader_port, my_hostname, tcp_port=13337, sloppy_Qfrac=0.34, sloppy_R=3, sloppy_W=3):
+    def __init__(self, is_leader, leader_hostname, leader_port, my_hostname, tcp_port=13337, sloppy_Qsize=5, sloppy_R=3, sloppy_W=3):
 
         self.is_leader = is_leader
         self.leader_hostname = leader_hostname
@@ -27,11 +27,7 @@ class Node(object):
 
         self.currently_adding_peer=False
 
-        self.sloppy_Qfrac = sloppy_Qfrac  # fraction of total members to replicate on
-
-        # sets self.sloppy_Qsize to the number of replications required
-        self.update_SQsize = lambda: self.sloppy_Qsize=floor(len(self.membership_ring) * self.sloppy_Qfrac)
-        self.update_SQsize()
+        self.sloppy_Qsize = sloppy_Qsize  # fraction of total members to replicate on
         #number of peers required for a read or write to succeed.
         self.sloppy_R=sloppy_R
         self.sloppy_W=sloppy_W
@@ -190,10 +186,6 @@ class Node(object):
 
         self.membership_ring.remove_node(data[0])
 
-        self.update_SQsize()
-        # todo: update sloppy quorum size, if size changes
-        # tell your lowest index replica to delete your files
-
         return "removed " + data[0] + " from ring"
 
     #request format:
@@ -246,17 +238,18 @@ class Node(object):
             msg = forwardedReq(req)
             #forward message to target node
 
-    def find_req_for_msg(self,msg,sender):
-        contents=_unpack_message(msg[5:])
-        #find correct request corresponding to message
-        #by checking the response id (aka timestamp of the req creation)
-        if msg[0] == '\x70':
-            req_ts = contents[3]
-        elif msg[0] == '\x80':
-            req_ts = contents[2]
-        #or by checking matching the response id of the msg's req's prev_req.time
-        else:  
-            req_ts = contents.previous_request.time_created
+    def find_req_for_msg(self,msg,sender, req_ts=None):
+        if not req_ts:
+            contents=_unpack_message(msg[5:])
+            #find correct request corresponding to message
+            #by checking the response id (aka timestamp of the req creation)
+            if msg[0] == '\x70':
+                req_ts = contents[3]
+            elif msg[0] == '\x80':
+                req_ts = contents[2]
+            #or by checking matching the response id of the msg's req's prev_req.time
+            else:  
+                req_ts = contents.previous_request.time_created
 
         return list(filter(
             lambda r: r.time_created == req_ts, self.ongoing_requests
@@ -284,27 +277,44 @@ class Node(object):
             if len(request.responses) >= minNumResp:
                 self.complete_message(req)
 
+    def coalesce_responses(self,request):
+        responses=list(request.responses.values())
+
+
+
+
+
+
+
+
+
+
     def complete_request(self,request):
-        pass
         if request.type == 'get':
-            pass
             #if sendbackto is a peer
+            if self.membership_ring.is_peer(request.sendBackTo):
                 #this is a response to a for_*
+                msg = responseForForward(request)
                 #send the whole request object back to the peer
-            #else
+
+            else:
                 #compile results from responses and send them to client
         elif request.type == 'put':
-            pass
-            #if sendback is a peer
+            if self.membership_ring.is_peer(request.sendBackTo):
+                #this is a response to a for_*
+                msg = responseForForward(request)
                 #send the whole request object back to the peer
+
         else:
-            pass
             #if sendbackto is a peer
+            if self.membership_ring.is_peer(request.sendBackTo):
+                pass
                 #send the response object you got back to the peer
                     #from request.responses (it is the put or get they need)
                     #if you need to, make req.prev_req = req.prev_req.prev_req
                     #so it looks like you did the request yourself
-            #else
+            else:
+                pass
                 #peer is sending you back the completed put or get
                 #if put send back success
                 #else, compile results and send back
