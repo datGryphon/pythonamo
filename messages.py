@@ -108,5 +108,5 @@ def responseForForward(msg):
 def okMessage():
 	return b'\xff'+struct.pack('!i',0)
 
-def _get_payload_len(len_str)
+def _get_payload_len(len_str):
 	return struct.unpack('!i',len_str)[0]

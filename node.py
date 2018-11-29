@@ -12,7 +12,7 @@ from request import Request
 
 class Node(object):
 
-    def __init__(self, is_leader, leader_hostname, leader_port, my_hostname, tcp_port=13337, sloppy_Qsize=5, sloppy_R=3, sloppy_W=3):
+    def __init__(self, is_leader, leader_hostname, leader_port, tcp_port=13337, sloppy_Qsize=5, sloppy_R=3, sloppy_W=3):
 
         self.is_leader = is_leader
         self.leader_hostname = leader_hostname
@@ -58,9 +58,7 @@ class Node(object):
         self.tcp_socket.listen(5)
 
         #lists of connections
-        self.unidentified_sockets=[]
-        self.peer_sockets={}
-        self.client_sockets={}
+        self.connections={}
 
     def accept_connections(self):
         #moved to __init__
