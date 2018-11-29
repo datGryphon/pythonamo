@@ -188,6 +188,14 @@ class Node(object):
 
         return "removed " + data[0] + " from ring"
 
+
+    #this is where we need to handle hinted handoff if a 
+    #peer is not responsive by asking another peer to hold the
+    #message until the correct node recovers
+    def send_to_replicas(nodes,msg):
+        for node in nodes:
+            self.connections[node].sendall(msg)
+
     #request format:
     #object which contains 
         #type
@@ -212,6 +220,7 @@ class Node(object):
         self.ongoing_requests.append(req)       #set as ongoing
 
         target_node= self.membership_ring.get_node_for_key(req.hash)
+        replica_nodes=self.membership_ring.get_replicas_for_key(req.hash)
 
         #Find out if you can respond to this request
         if rtype == 'get':
@@ -220,10 +229,12 @@ class Node(object):
             )
             #add my information to the request
             result = self.db.getFile(args)
-            my_resp = getFileResponse(args, result)
+            my_resp = getFileResponse(args, result, req.time_created)
             self.update_request(my_resp,self.my_hostname,req)
             #send the getFile message to everyone in the replication range
-
+            msg = getFile(req.hash, req.time_created)
+            #this function will need to handle hinted handoff
+            self.send_to_replicas(replica_nodes,msg)
         elif rtype == 'put':
             data_nodes = self.membership_ring.get_node_for_key(
                 args[0],self.sloppy_Qsize-1
@@ -233,10 +244,13 @@ class Node(object):
             #add my information to the request
             self.update_request(my_resp,self.my_hostname,req)
             #send the storeFile message to everyone in the replication range
-
+            msg = storeFile(req.hash,req.value,req.context,req.time_created)
+            #this function will need to handle hinted handoff
+            self.send_to_replicas(replica_nodes,msg)
         else:
             msg = forwardedReq(req)
             #forward message to target node
+            self.connections[req.forwardedTo].sendall(msg)
 
     def find_req_for_msg(self,msg,sender, req_ts=None):
         if not req_ts:
@@ -265,7 +279,6 @@ class Node(object):
             request=request[0]
 
         request.responses[sender]=msg
-        print("Stored response from ")
         if msg[0] == '\x0B':
             self.complete_request(request)
         else:#its a \x70 or \x80
@@ -320,6 +333,7 @@ class Node(object):
                 msg = getResponse(request.hash,self.coalesce_responses(data))
 
         #send msg to request.sendBackTo
+        self.connections[request.sendBackTo].sendall(msg)
 
         #remove request from ongoing list
         self.ongoing_requests = list(filter(
