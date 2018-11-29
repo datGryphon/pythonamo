@@ -44,13 +44,17 @@ import struct
 
 
 ############################################
-def client_message(user_input):
-    return pickle.dumps((0, user_input))
-
-
 def _unpack_message(data):
-    data_tuple = pickle.loads(data)
-    return data_tuple
+    message_type = data[0]
+    # message_len = struct.unpack('!i', data[1:5])[0]
+    message = pickle.loads(data[5:])
+
+    return message_type, message
+
+
+def client_message(user_input):
+    data = pickle.dumps(user_input)
+    return b'\x00' + struct.pack('!i', len(data)) + data
 
 
 def newPeerReq(address):

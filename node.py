@@ -1,4 +1,5 @@
 import socket
+import struct
 from collections import defaultdict
 from storage import Storage
 from ring import Ring
@@ -76,29 +77,32 @@ class Node(object):
                     self.connections[client_address[0]] = connection
 
                 else:
-                    data = s.recv(1024)
-
-                    if not data:  # remove for connection pool and close socket
+                    header = s.recv(5)
+                    if not header:  # remove for connection pool and close socket
                         incoming_connections.remove(s)
                         del self.connections[s.getpeername()[0]]
                         s.close()
 
-                    self._process_message(data, s.getpeername()[0])  # addr is a tuple of hostname and port
+                    message_len = struct.unpack('!i', header[1:5])[0]
+
+                    data = b''
+                    while len(data) < message_len:
+                        data += s.recv(message_len - len(data))
+
+                    self._process_message(header+data, s.getpeername()[0])  # addr is a tuple of hostname and port
 
     def _process_message(self, data, sender):
-        data_tuple = messages._unpack_message(data)
-        if data_tuple[0] == 0:  # Message from client, second element should be user_input string
-            result = self._process_command(data_tuple[1], sendBackTo=sender)
-            print(result)
+        message_type, data_tuple = messages._unpack_message(data)
+        print(message_type, data_tuple)
+
+        # if data_tuple[0] == 0:  # Message from client, second element should be user_input string
+        #     result = self._process_command(data_tuple[1], sendBackTo=sender)
+        #     print(result)
 
     def _process_command(self, user_input, sendBackTo):
         """Process commands"""
         if not user_input:
             return ""
-
-        # no leader anymore, after a node has been boostrapped, being the leader means nothing
-        # if not self.is_leader:
-        #     return self.forward_request_to_leader(user_input)
 
         # First word is command. Rest are then arguments.
         command, *data = user_input.split(" ")
