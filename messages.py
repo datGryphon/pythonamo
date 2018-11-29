@@ -60,7 +60,7 @@ def putMessage(name,value,context):
 	data=pickle.dumps((name,value,context))
 	return b'\x03'+struct.pack('!i',len(data))+data
 
-def putMessageResponse(name,value,context):
+def putResponse(name,value,context):
 	data=pickle.dumps((name,value,context))
 	return b'\x30'+struct.pack('!i',len(data))+data
 

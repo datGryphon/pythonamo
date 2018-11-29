@@ -269,55 +269,55 @@ class Node(object):
         if msg[0] == '\x0B':
             self.complete_request(request)
         else:#its a \x70 or \x80
-            #number of responses required is min of (sloppy_R/W and the number of replicas)
-            minNumResp = min(
-                self.sloppy_Qsize, 
-                self.sloppy_R if msg[0] == '\x80' else self.sloppy_W 
-            )
+            minNumResp = self.sloppy_R if msg[0] == '\x80' else self.sloppy_W 
+
             if len(request.responses) >= minNumResp:
                 self.complete_message(req)
 
     def coalesce_responses(self,request):
-        responses=list(request.responses.values())
-
-
-
-
-
-
-
-
-
+        resp_list=list(request.responses.values())
+        results=[]
+        for resp in resp_list:
+            results.extend([
+                tup for tup in _unpack_message(resp[5:])[1] if tup not in results
+            ])
 
     def complete_request(self,request):
         if request.type == 'get':
             #if sendbackto is a peer
-            if self.membership_ring.is_peer(request.sendBackTo):
+            if request.sendBackTo in self.membership_ring:
                 #this is a response to a for_*
-                msg = responseForForward(request)
                 #send the whole request object back to the peer
-
+                msg = responseForForward(request)
             else:
                 #compile results from responses and send them to client
+                #send message to client
+                msg = getResponse(request.hash,self.coalesce_responses(request))
         elif request.type == 'put':
-            if self.membership_ring.is_peer(request.sendBackTo):
+            if request.sendBackTo in self.membership_ring:
                 #this is a response to a for_*
-                msg = responseForForward(request)
                 #send the whole request object back to the peer
-
-        else:
+                msg = responseForForward(request)
+            else:
+                #send success message to client
+                msg = putResponse(request.hash,request.value,request.context)
+        else: #request.type == for_*
+            data = _unpack_message(request.response.values()[0][5:])
             #if sendbackto is a peer
-            if self.membership_ring.is_peer(request.sendBackTo):
-                pass
+            if request.sendBackTo in self.membership_ring:
+                #unpickle the returned put request
+                data.previous_request = data.previous_request.previous_request
                 #send the response object you got back to the peer
                     #from request.responses (it is the put or get they need)
                     #if you need to, make req.prev_req = req.prev_req.prev_req
                     #so it looks like you did the request yourself
-            else:
-                pass
-                #peer is sending you back the completed put or get
-                #if put send back success
-                #else, compile results and send back
+                msg = responseForForward(data)
+            elif request.type == 'for_put':
+                msg = putResponse(request.hash,request.value,request.context)
+            else: #for_get
+                msg = getResponse(request.hash,self.coalesce_responses(data))
+
+        #send msg to request.sendBackTo
 
         #remove request from ongoing list
         self.ongoing_requests = list(filter(
