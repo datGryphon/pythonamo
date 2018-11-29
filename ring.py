@@ -8,7 +8,7 @@ class Ring(object):
     def __init__(self, vnode_count=1, replica_count=0):
         """Create a new Ring.
 
-        :param vnode_count: number of vnode_count.
+        :param vnode_count: number of virtual nodes.
         :param replica_count: number of replicas for each key
         """
         self.vnode_count = vnode_count
