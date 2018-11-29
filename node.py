@@ -67,7 +67,7 @@ class Node(object):
         incoming_connections = {self.tcp_socket}
 
         while True:
-            readable, _, _ = select.select(incoming_connections, [], [])
+            readable, _, _ = select.select(incoming_connections, [], [], 0)
             for s in readable:
                 if s is self.tcp_socket:
                     connection, client_address = s.accept()
@@ -82,6 +82,7 @@ class Node(object):
                         incoming_connections.remove(s)
                         del self.connections[s.getpeername()[0]]
                         s.close()
+                        continue
 
                     message_len = struct.unpack('!i', header[1:5])[0]
 
@@ -94,6 +95,18 @@ class Node(object):
     def _process_message(self, data, sender):
         message_type, data_tuple = messages._unpack_message(data)
         print(message_type, data_tuple)
+
+        message_type_mapping ={
+            b'\x00': self._process_command,
+            b'\x07': lambda x:x , #get file and send
+            b'\x08': lambda x:x , #store file and ack
+            b'\x70': self.update_request,
+            b'\x80': self.update_request,
+            b'\x0B': self.update_request,
+            b'\x0A': self.handle_forwarded_req,
+        }
+
+        message_type_mapping[message_type](data_tuple,sender)
 
         # if data_tuple[0] == 0:  # Message from client, second element should be user_input string
         #     result = self._process_command(data_tuple[1], sendBackTo=sender)

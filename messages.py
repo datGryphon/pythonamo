@@ -49,7 +49,7 @@ def _unpack_message(data):
     # message_len = struct.unpack('!i', data[1:5])[0]
     message = pickle.loads(data[5:])
 
-    return message_type, message
+    return bytes([message_type]), message
 
 
 def client_message(user_input):
