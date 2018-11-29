@@ -98,8 +98,8 @@ class Node(object):
 
         message_type_mapping ={
             b'\x00': self._process_command,
-            b'\x07': lambda x:x , #get file and send
-            b'\x08': lambda x:x , #store file and ack
+            b'\x07': self.perform_operation,
+            b'\x08': self.perform_operation,
             b'\x70': self.update_request,
             b'\x80': self.update_request,
             b'\x0B': self.update_request,
@@ -334,6 +334,17 @@ class Node(object):
             )
         else:  # forward the client request to the peer incharge of req
             return self._request_data_from_peer(target_node, data[0])
+
+    def perform_operation(self, data, sendBackTo):
+        if len(data) == 2: #this is a getFile msg
+            print(sendBackTo," is asking me to get %s"%(data[0]))
+            msg = messages.getFileResponse(data[0],self.db.getFile(data[0]),data[1])
+        else: #this is a storeFile msg
+            print(sendBackTo," is asking me to store %s"%(data[:-1]))
+            self.storeFile(data[0],sendBackTo,data[2],data[1])
+            msg = messages.storeFileResponse(*data)
+
+        self.connections[sendBackTo].sendall(msg)
 
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
