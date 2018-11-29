@@ -281,6 +281,7 @@ class Node(object):
             results.extend([
                 tup for tup in _unpack_message(resp[5:])[1] if tup not in results
             ])
+        return results
 
     def complete_request(self,request):
         if request.type == 'get':
@@ -302,6 +303,7 @@ class Node(object):
                 #send success message to client
                 msg = putResponse(request.hash,request.value,request.context)
         else: #request.type == for_*
+            #unpack the forwarded request object
             data = _unpack_message(request.response.values()[0][5:])
             #if sendbackto is a peer
             if request.sendBackTo in self.membership_ring:
