@@ -229,4 +229,6 @@ dmypy.json
 pyvenv.cfg
 pip-selfcheck.json
 
+pickled_req
+
 # End of https://www.gitignore.io/api/linux,python,pycharm+all
