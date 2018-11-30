@@ -3,9 +3,7 @@ import struct
 from collections import defaultdict
 from storage import Storage
 from ring import Ring
-from math import floor
 import select
-import sys
 import json
 
 import messages
@@ -38,7 +36,7 @@ class Node(object):
         # saves all the pending membership messages
         self._membership_messages = defaultdict(set)
         self.current_view = 0  # increment this on every leader election
-        self.request_id = 0  # increment this on every request sent to peers
+        self.membership_request_id = 0  # increment this on every request sent to peers
 
         # Maps command to the corresponding function.
         # Command arguments are passed as the first argument to the function.
@@ -96,9 +94,9 @@ class Node(object):
         message_type, data_tuple = messages._unpack_message(data)
         print(message_type, data_tuple)
 
-
         message_type_mapping ={
             b'\x00': self._process_command,
+            b'\x01': self.register_node,
             b'\x07': self.perform_operation,
             b'\x08': self.perform_operation,
             b'\x70': self.update_request,
@@ -107,11 +105,7 @@ class Node(object):
             b'\x0A': self.handle_forwarded_req,
         }
 
-        message_type_mapping[message_type](data_tuple,sender)
-
-        # if data_tuple[0] == 0:  # Message from client, second element should be user_input string
-        #     result = self._process_command(data_tuple[1], sendBackTo=sender)
-        #     print(result)
+        message_type_mapping[message_type](data_tuple, sender)
 
     def _process_command(self, user_input, sendBackTo):
         """Process commands"""
@@ -129,20 +123,34 @@ class Node(object):
         else:
             return self.command_registry[command](data)
 
-    def register_node(self, data):
+    def register_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname"""
         if not data:
             return "Error: hostname required"
 
-        if len(self.membership_ring) == 1:  # Only leader is in the ring. Just add.
-            self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
-            return "added " + data[0] + " to ring"
+        if self.is_leader:
+            print("Sending req message to peers")
+            new_peer_message = messages.reqMessage(self.current_view, self.membership_request_id, 1, data[0])
+            self._membership_messages[(self.current_view, self.membership_request_id)] = set()
+            self.broadcast_message(new_peer_message)
+            # todo: handle timer
+            return
 
-        self.membership_ring.add_node(data[0], data[0])  # node id is same as hostname for now
-
-        # todo: if number of replicas goes up, need to find new peer and send them your files
+        # peer sends OK messages
 
         return "added " + data[0] + " to ring"
+
+    def _create_socket(self, hostname):
+        """Creates a socket to the host and adds it connections dict. Returns created socket object."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((hostname, self.tcp_port))
+        self.connections[hostname] = s
+        return s
+
+    def broadcast_message(self, message):
+        for h in self.membership_ring.get_all_hosts():
+            conn = self.connections.get(h, self._create_socket(h))
+            conn.sendall(message)
 
     # Send a remove node message to everyone and if you are that node, shutdown
     def remove_node(self, data):
@@ -275,7 +283,7 @@ class Node(object):
         if not request:
             request = self.find_req_for_msg(msg, sender)
             if not request:
-                print("Could not find request for message, %s was probably too slow" % (sender))
+                print("Could not find request for message, %s was probably too slow" % sender)
                 return
             request = request[0]
 
@@ -341,13 +349,50 @@ class Node(object):
             lambda r: r != request, self.ongoing_requests
         ))
 
+    def put_data(self, data, sendBackTo):
+        if len(data) != 3:
+            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
+
+        key = data[0]
+        prev = data[1]
+        value = data[2]
+        target_node = self.membership_ring.get_node_for_key(data[0])
+
+        if not self.is_leader:
+            # forward request to leader for client
+            return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
+        else:  # I am the leader
+            if target_node == self.hostname:
+                # I'm processing a request for a client directly
+                self.start_request('put', data, sendBackTo=sendBackTo)
+                return "started put request for %s:%s locally [%s]" % (key, value, self.hostname)
+            else:  # I am forwarding a request from the client to the correct node
+                return self._send_data_to_peer(target_node, data, sendBackTo)
+
+    def get_data(self, data, sendBackTo):
+        """Retrieve V for given K from the database. data[0] must be the key"""
+        if not data:
+            return "Error: key required"
+
+        target_node = self.membership_ring.get_node_for_key(data[0])
+
+        # if I can do it myself
+        if target_node == self.hostname:
+            # I am processing a request for a client directly
+            self.start_request('get', data, sendBackTo=sendBackTo)
+            return "started get request for %s:%s locally [%s]" % (
+                data[0], self.db.getFile(data[0]), self.hostname
+            )
+        else:  # forward the client request to the peer incharge of req
+            return self._request_data_from_peer(target_node, data[0], sendBackTo=sendBackTo)
+
     def perform_operation(self, data, sendBackTo):
-        if len(data) == 2: #this is a getFile msg
-            print(sendBackTo," is asking me to get %s"%(data[0]))
-            msg = messages.getFileResponse(data[0],self.db.getFile(data[0]),data[1])
-        else: #this is a storeFile msg
-            print(sendBackTo," is asking me to store %s"%(data[:-1]))
-            self.storeFile(data[0],sendBackTo,data[2],data[1])
+        if len(data) == 2:  # this is a getFile msg
+            print(sendBackTo, " is asking me to get %s" % (data[0]))
+            msg = messages.getFileResponse(data[0], self.db.getFile(data[0]), data[1])
+        else:  # this is a storeFile msg
+            print(sendBackTo, " is asking me to store %s" % (data[:-1]))
+            self.db.storeFile(data[0], sendBackTo, data[2], data[1])
             msg = messages.storeFileResponse(*data)
 
         self.connections[sendBackTo].sendall(msg)

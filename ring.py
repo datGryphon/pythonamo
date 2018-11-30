@@ -92,6 +92,9 @@ class Ring(object):
 
         return replica_list
 
+    def get_all_hosts(self):
+        return set(self._nodes.values())
+
 
 if __name__ == '__main__':
     r = Ring(vnode_count=5, replica_count=3)
@@ -120,3 +123,5 @@ if __name__ == '__main__':
     print(target_hostnames)  # got node1hostname
 
     print(len(r))
+
+    print(r.get_all_hosts())

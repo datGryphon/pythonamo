@@ -4,41 +4,43 @@ import struct
 ############################################
 '''	Message Codes (first byte of message)
 
-	00 -- clientMessage
+    00 -- clientMessage
 
-	01 -- newPeerRequest
+    01 -- REQMessage
+    
+    10 -- NewViewMessage
 
-	02 -- clientConnectRequest
+    02 -- clientConnectRequest
 
-	03 -- clientPut
+    03 -- clientPut
 
-	30 -- clientPutResponse
+    30 -- clientPutResponse
 
-	30 -- putResponse
+    30 -- putResponse
 
-	04 -- clientGet
+    04 -- clientGet
 
-	40 -- clientGetResponse
+    40 -- clientGetResponse
 
-	06 -- clientRemoveNode
+    06 -- clientRemoveNode
 
-	07 -- storeFile
+    07 -- storeFile
 
-	70 -- I stored it
+    70 -- I stored it
 
-	08 -- getFile
+    08 -- getFile
 
-	80 -- my results for that file
+    80 -- my results for that file
 
-	09 -- peerList 
+    09 -- peerList 
 
-	0A -- forwardedClientReq
-			contents is the bytestring of the client message
+    0A -- forwardedClientReq 
+          contents is the bytestring of the client message
 
-	0B -- ResponseForForwardedClientReq
-			contents is the bytestring to be sent to client
+    0B -- ResponseForForwardedClientReq
+          contents is the bytestring to be sent to client
 
-	FF -- OK!
+    FF -- OK!
 
 '''
 
@@ -46,7 +48,6 @@ import struct
 ############################################
 def _unpack_message(data):
     message_type = data[0]
-    # message_len = struct.unpack('!i', data[1:5])[0]
     message = pickle.loads(data[5:])
 
     return bytes([message_type]), message
@@ -57,8 +58,19 @@ def client_message(user_input):
     return b'\x00' + struct.pack('!i', len(data)) + data
 
 
-def newPeerReq(address):
-    data = pickle.dumps(address)
+# Operation: 1 - add peer, 2 - delete peer
+def reqMessage(view_id, req_id, operation, address):
+    data = pickle.dumps((view_id, req_id, operation, address))
+    return b'\x01' + struct.pack('!i', len(data)) + data
+
+
+def okMessage(view_id, req_id):
+    data = pickle.dumps((view_id, req_id))
+    return b'\xff' + struct.pack('!i', len(data)) + data
+
+
+def newView(view_id, address):
+    data = pickle.dumps((view_id, address))
     return b'\x01' + struct.pack('!i', len(data)) + data
 
 
@@ -125,10 +137,6 @@ def forwardedReq(msg):
 def responseForForward(msg):
     data = pickle.dumps(msg)
     return b'\x0B' + struct.pack('!i', len(data)) + data
-
-
-def okMessage():
-    return b'\xff' + struct.pack('!i', 0)
 
 
 def _get_payload_len(len_str):
