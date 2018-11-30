@@ -143,6 +143,7 @@ class Node(object):
     def _create_socket(self, hostname):
         """Creates a socket to the host and adds it connections dict. Returns created socket object."""
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(10)  # 10 seconds
         s.connect((hostname, self.tcp_port))
         self.connections[hostname] = s
         return s
