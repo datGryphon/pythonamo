@@ -6,6 +6,7 @@ from ring import Ring
 from math import floor
 import select
 import sys
+import json
 
 import messages
 from request import Request
@@ -82,19 +83,19 @@ class Node(object):
                         incoming_connections.remove(s)
                         del self.connections[s.getpeername()[0]]
                         s.close()
-                        continue
+                    else:
+                        message_len = struct.unpack('!i', header[1:5])[0]
 
-                    message_len = struct.unpack('!i', header[1:5])[0]
-
-                    data = b''
-                    while len(data) < message_len:
-                        data += s.recv(message_len - len(data))
-
-                    self._process_message(header+data, s.getpeername()[0])  # addr is a tuple of hostname and port
+                        data = b''
+                        while len(data) < message_len:
+                            data += s.recv(message_len - len(data))
+                        print("Processing new message")
+                        self._process_message(header+data, s.getpeername()[0])  # addr is a tuple of hostname and port
 
     def _process_message(self, data, sender):
         message_type, data_tuple = messages._unpack_message(data)
         print(message_type, data_tuple)
+
 
         message_type_mapping ={
             b'\x00': self._process_command,
@@ -152,12 +153,52 @@ class Node(object):
 
         return "removed " + data[0] + " from ring"
 
+    def put_data(self, data, sendBackTo):
+        if len(data) != 3:
+            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
+
+        data=[ data[0], json.loads(data[1]), data[2] ]
+        key = data[0]
+        prev = data[1]
+        value = data[2]
+
+        target_node = self.membership_ring.get_node_for_key(data[0])
+
+        if not self.is_leader:
+            # forward request to leader for client
+            return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
+        else:  # I am the leader
+            if target_node == self.hostname:
+                # I'm processing a request for a client directly
+                self.start_request('put', data, sendBackTo=sendBackTo)
+                return "started put request for %s:%s locally [%s]" % (key, value, self.hostname)
+            else:  # I am forwarding a request from the client to the correct node
+                return self._send_data_to_peer(target_node, data, sendBackTo)
+
+    def get_data(self, data, sendBackTo):
+        """Retrieve V for given K from the database. data[0] must be the key"""
+        if not data:
+            return "Error: key required"
+
+        target_node = self.membership_ring.get_node_for_key(data[0])
+
+        # if I can do it myself
+        if target_node == self.hostname:
+            # I am processing a request for a client directly
+            self.start_request('get', data[0], sendBackTo=sendBackTo)
+            return "started get request for %s:%s locally [%s]" % (
+                data[0], self.db.getFile(data[0]), self.hostname
+            )
+        else:  # forward the client request to the peer incharge of req
+            return self._request_data_from_peer(target_node, data[0])
+
     # this is where we need to handle hinted handoff if a
     # peer is not responsive by asking another peer to hold the
     # message until the correct node recovers
     def send_to_replicas(self, nodes, msg):
         for node in nodes:
             self.connections[node].sendall(msg)
+
 
     # request format:
     # object which contains
@@ -178,8 +219,10 @@ class Node(object):
     # 'for_*' if for requests that must be handled by a different peer
     # then when the response is returned, complete_request will send the
     # output to the correct client or peer (or stdin)
-
     def start_request(self, rtype, args, sendBackTo, prev_req=None):
+        print("%s: New Request [ %s, %s ] for %s"%(
+                self.hostname,rtype,args,sendBackTo
+            ))
         req = Request(rtype, args, sendBackTo)  # create request obj
         self.ongoing_requests.append(req)  # set as ongoing
 
@@ -197,8 +240,8 @@ class Node(object):
             # this function will need to handle hinted handoff
             self.send_to_replicas(replica_nodes, msg)
         elif rtype == 'put':
-            self.db.storeFile(args[0], self.hostname, args[2], args[1])
-            my_resp = messages.storeFileResponse(args[0], args[1], args[2])
+            self.db.storeFile(args[0], self.hostname, args[1], args[2])
+            my_resp = messages.storeFileResponse(args[0], args[1], args[2],req.time_created)
             # add my information to the request
             self.update_request(my_resp, self.hostname, req)
             # send the storeFile message to everyone in the replication range
@@ -297,43 +340,6 @@ class Node(object):
         self.ongoing_requests = list(filter(
             lambda r: r != request, self.ongoing_requests
         ))
-
-    def put_data(self, data, sendBackTo):
-        if len(data) != 3:
-            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
-
-        key = data[0]
-        prev = data[1]
-        value = data[2]
-        target_node = self.membership_ring.get_node_for_key(data[0])
-
-        if not self.is_leader:
-            # forward request to leader for client
-            return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
-        else:  # I am the leader
-            if target_node == self.hostname:
-                # I'm processing a request for a client directly
-                self.start_request('put', data, sendBackTo=sendBackTo)
-                return "started put request for %s:%s locally [%s]" % (key, value, self.hostname)
-            else:  # I am forwarding a request from the client to the correct node
-                return self._send_data_to_peer(target_node, data, sendBackTo)
-
-    def get_data(self, data, sendBackTo):
-        """Retrieve V for given K from the database. data[0] must be the key"""
-        if not data:
-            return "Error: key required"
-
-        target_node = self.membership_ring.get_node_for_key(data[0])
-
-        # if I can do it myself
-        if target_node == self.hostname:
-            # I am processing a request for a client directly
-            self.start_request('get', data, sendBackTo=sendBackTo)
-            return "started get request for %s:%s locally [%s]" % (
-                data[0], self.db.getFile(data[0]), self.hostname
-            )
-        else:  # forward the client request to the peer incharge of req
-            return self._request_data_from_peer(target_node, data[0])
 
     def perform_operation(self, data, sendBackTo):
         if len(data) == 2: #this is a getFile msg
