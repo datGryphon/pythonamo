@@ -52,6 +52,7 @@ class Node(object):
 
         # has hostnames mapped to open sockets
         self.connections = {}
+        self.client_list = set()
         self.dns = {}  # Maps IP to hostnames
 
         _ip = socket.gethostbyname(leader_hostname)
@@ -110,6 +111,8 @@ class Node(object):
 
     def _process_command(self, user_input, sendBackTo):
         """Process commands"""
+
+        self.client_list.add(sendBackTo)
 
         # todo: if not self.leader, forward it to leader
         if not self.is_leader:
@@ -272,7 +275,7 @@ class Node(object):
         print("%s: New Request [ %s, %s ] for %s"%(
                 self.hostname,rtype,args,sendBackTo
             ))
-        req = Request(rtype, args, sendBackTo)  # create request obj
+        req = Request(rtype, args, sendBackTo, previous_request=prev_req)  # create request obj
         self.ongoing_requests.append(req)  # set as ongoing
 
         target_node = self.membership_ring.get_node_for_key(req.hash)
@@ -289,17 +292,17 @@ class Node(object):
             # add my information to the request
             result = self.db.getFile(args)
             my_resp = messages.getFileResponse(args, result, req.time_created)
-            self.update_request(messages._unpack_message(my_resp)[1], self.hostname, req)
+            self.update_request(messages._unpack_message(my_resp)[1], socket.gethostbyname(self.hostname), req)
             # send the getFile message to everyone in the replication range
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
             self.broadcast_message(replica_nodes, msg)
             print("Sent getFile message to %s"%(replica_nodes))
         elif rtype == 'put':
-            self.db.storeFile(args[0], self.hostname, args[1], args[2])
+            self.db.storeFile(args[0], socket.gethostbyname(self.hostname), args[1], args[2])
             my_resp = messages.storeFileResponse(args[0], args[1], args[2],req.time_created)
             # add my information to the request
-            self.update_request(messages._unpack_message(my_resp)[1], self.hostname, req)
+            self.update_request(messages._unpack_message(my_resp)[1], socket.gethostbyname(self.hostname), req)
             # send the storeFile message to everyone in the replication range
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
@@ -342,12 +345,12 @@ class Node(object):
 
     def coalesce_responses(self, request):
         resp_list = list(request.responses.values())
-        print("Responses:\n\n\n",resp_list,'\n\n\n',flush=True)
+        # print("Responses:\n\n\n",resp_list,'\n\n\n',flush=True)
         results = []
         for resp in resp_list:
-            print(resp)
+            # print(resp)
             results.extend([
-                tup for tup in messages._unpack_message(resp[5:])[1] if tup not in results
+                tup for tup in resp[1] if tup not in results
             ])
         return results
 
@@ -356,7 +359,7 @@ class Node(object):
         if request.type == 'get':
             # if sendbackto is a peer
             print("Response for client (name: ",request.hash,", results: ",self.coalesce_responses(request),") ")
-            if request.previous_request:
+            if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
                 msg = messages.responseForForward(request)
@@ -367,7 +370,7 @@ class Node(object):
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
                 print("Sucessful put completed for ",request.sendBackTo)
-            if request.previous_request:
+            if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
                 msg = messages.responseForForward(request)
@@ -376,9 +379,10 @@ class Node(object):
                 msg = messages.putResponse(request.hash, request.value, request.context)
         else:  # request.type == for_*
             # unpack the forwarded request object
-            data = messages._unpack_message(request.response.values()[0][5:])
+            data = list(request.responses.values())[0]
+            print("Request Response Data: ",data)
             # if sendbackto is a peer
-            if request.previous_request:
+            if request.sendBackTo not in self.client_list:
                 # unpickle the returned put request
                 data.previous_request = data.previous_request.previous_request
                 # send the response object you got back to the peer
@@ -393,7 +397,8 @@ class Node(object):
                 msg = messages.getResponse(request.hash, self.coalesce_responses(data))
 
         # send msg to request.sendBackTo
-        self.broadcast_message([request.sendBackTo],msg)
+        if request.sendBackTo not in self.client_list:
+            self.broadcast_message([request.sendBackTo],msg)
         print(msg)
         # self.connections[request.sendBackTo].sendall(msg)
 
@@ -419,6 +424,7 @@ class Node(object):
 
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
+        print("Handling a forwarded request [ %s, %f ]"%(prev_req.type,prev_req.time_created))
         # someone forwarded you a put request
         # if you are the leader, check if you can takecare of it, else,
         # start a new put request with this request as the previous one
@@ -427,22 +433,22 @@ class Node(object):
                 if target_node == self.hostname:
                     args = (prev_req.hash, prev_req.value, prev_req.context)
                     self.start_request('put', args, sendBackTo, prev_req=prev_req)
-                    return "handling forwarded put request locally"
+                    print("handling forwarded put request locally")
                 else:
                     args = (target_node, prev_req.hash,
                             prev_req.value, prev_req.context
                             )
                     self.start_request('for_put', args, sendBackTo, prev_req)
-                    return "Forwarded Forwarded put request to correct node"
+                    print("Forwarded Forwarded put request to correct node")
             else:  # the leader is forwarding you a put
                 args = (prev_req.hash, prev_req.value, prev_req.context)
                 self.start_request('put', args, sendBackTo, prev_req=prev_req)
-                return "handling forwarded put request locally"
+                print("handling forwarded put request locally")
         # someone forwarded you a get request, you need to take care of it
         # start new get request with this as the previous one
         else:  # type is get or for_get
             self.start_request('get', prev_req.hash, sendBackTo, prev_req)
-            return "handling forwarded get request locally"
+            print("handling forwarded get request locally")
 
     def _send_data_to_peer(self, target_node, data, sendBackTo):
 

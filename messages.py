@@ -92,7 +92,6 @@ def getMessage(name):
     data = pickle.dumps(name)
     return b'\x04' + struct.pack('!i', len(data)) + data
 
-
 # send back the file name and the combined list of values
 def getResponse(name, result):
     data = pickle.dumps((name, result))
