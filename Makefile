@@ -12,3 +12,6 @@ stop-docker:
 
 run-client-docker:
 	docker-compose run client1
+
+testcase:
+	docker-compose run testcases

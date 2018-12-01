@@ -59,6 +59,61 @@ services:
     volumes:
     - "./:/code"
 
+  machine6:
+    image: python:3
+    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-035.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-035.ccs.neu.edu
+    volumes:
+      - "./:/code"
+
+  machine7:
+    image: python:3
+    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-036.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-036.ccs.neu.edu
+    volumes:
+      - "./:/code"
+
+  machine8:
+    image: python:3
+    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-037.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-037.ccs.neu.edu
+    volumes:
+      - "./:/code"
+
+  machine9:
+    image: python:3
+    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-038.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-038.ccs.neu.edu
+    volumes:
+      - "./:/code"
+
+  machine10:
+    image: python:3
+    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-039.ccs.neu.edu
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-039.ccs.neu.edu
+    volumes:
+      - "./:/code"
+
   client1:
     image: python:3
     command: python -u /code/client.py --leader vdi-linux-030.ccs.neu.edu --port 13337
@@ -71,6 +126,19 @@ services:
         - vdi-linux-040.ccs.neu.edu
     volumes:
     - "./:/code"
+
+  testcases:
+    image: python:3
+    command: python -u /code/test_cases.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    hostname: vdi-linux-041.ccs.neu.edu
+    stdin_open: true
+    tty: true
+    networks:
+      neunet:
+        aliases:
+          - vdi-linux-041.ccs.neu.edu
+    volumes:
+      - "./:/code"
 
 networks:
   neunet:
