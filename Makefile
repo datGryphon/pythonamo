@@ -15,3 +15,4 @@ run-client-docker:
 
 testcase:
 	docker-compose run testcases
+	make run-client-docker
