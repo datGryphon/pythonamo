@@ -1,0 +1,19 @@
+session_name: dynamo
+windows:
+- focus: 'true'
+  layout: d97c,197x50,0,0{98x50,0,0[98x6,0,0,5,98x5,0,7,11,98x6,0,13,10,98x5,0,20,12,98x6,0,26,8,98x5,0,33,13,98x5,0,39,9,98x5,0,45,14],98x50,99,0[98x25,99,0,6,98x24,99,26,15]}
+#  options: {}
+  panes:
+    - docker-compose up machine2
+    - docker-compose up machine3
+    - docker-compose up machine4
+    - docker-compose up machine5
+    - docker-compose up machine6
+    - docker-compose up machine7
+    - docker-compose up machine8
+    - docker-compose up machine9
+    - docker-compose up machine1
+    - make testcase
+
+  start_directory: /home/vamc/src/github.com/vamc19/python-dynamo
+  window_name: zsh

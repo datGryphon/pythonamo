@@ -16,8 +16,6 @@ import struct
 
     30 -- clientPutResponse
 
-    30 -- putResponse
-
     04 -- clientGet
 
     40 -- clientGetResponse

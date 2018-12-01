@@ -77,8 +77,8 @@ class Ring(object):
         return self._generate_hash(vnode_ids[0]) in self._nodes
 
     # Helper functions to expose stable API
-    def add_node(self, node_id, node_hostname):
-        return self.__setitem__(node_id, node_hostname)
+    def add_node(self, node_hostname):
+        return self.__setitem__(node_hostname, node_hostname)
 
     def remove_node(self, node_id):
         return self.__delitem__(node_id)
@@ -104,11 +104,11 @@ class Ring(object):
 if __name__ == '__main__':
     r = Ring(vnode_count=5, replica_count=3)
 
-    r.add_node('node1', "node1.hostname")
-    r.add_node('node2', "node2.hostname")
-    r.add_node('node3', "node3.hostname")
-    r.add_node('node4', "node4.hostname")
-    r.add_node('node5', "node5.hostname")
+    r.add_node("node1.hostname")
+    r.add_node("node2.hostname")
+    r.add_node("node3.hostname")
+    r.add_node("node4.hostname")
+    r.add_node("node5.hostname")
 
     # Try inserting a key
     target_hostname = r.get_node_for_key("key1")
@@ -131,6 +131,6 @@ if __name__ == '__main__':
 
     # print(r.get_all_hosts())
 
-    print("node1" in r)
+    print("node1.hostname" in r)
     print("node100" in r)
     print("node3" in r)

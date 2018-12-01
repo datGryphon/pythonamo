@@ -1,13 +1,14 @@
+import logging
 import socket
 import struct
-from collections import defaultdict
-from storage import Storage, h
-from ring import Ring
 import select
 import json
 
 import messages
+from ring import Ring
 from request import Request
+from storage import Storage
+from collections import defaultdict
 
 
 class Node(object):
@@ -21,9 +22,9 @@ class Node(object):
         self.tcp_port = tcp_port
         self.my_address = (self.hostname, self.tcp_port)
 
-        self.membership_ring = Ring(replica_count=sloppy_Qsize-1)  # Other nodes in the membership
+        self.membership_ring = Ring(replica_count=sloppy_Qsize - 1)  # Other nodes in the membership
         if self.is_leader:
-            self.membership_ring.add_node(leader_hostname, leader_hostname)
+            self.membership_ring.add_node(leader_hostname)
 
         # todo: look into this, do we need both?
         self.bootstrapping = True
@@ -53,11 +54,9 @@ class Node(object):
         # has hostnames mapped to open sockets
         self.connections = {}
         self.client_list = set()
-        self.dns = {}  # Maps IP to hostnames
 
-        _ip = socket.gethostbyname(leader_hostname)
-        print(_ip)
-        self.dns[_ip] = leader_hostname
+        self.root = logging.getLogger()
+        self.root.setLevel(logging.DEBUG)
 
     def accept_connections(self):
         incoming_connections = {self.tcp_socket}
@@ -85,7 +84,7 @@ class Node(object):
                         while len(data) < message_len:
                             data += s.recv(message_len - len(data))
 
-                        self._process_message(header+data, s.getpeername()[0])  # addr is a tuple of hostname and port
+                        self._process_message(header + data, s.getpeername()[0])  # addr is a tuple of hostname and port
                         # # todo: is there a better way to find hostname?
                         # sender_hostname = self.dns[s.getpeername()[0]]
                         # self._process_message(header+data, sender_hostname)
@@ -232,7 +231,7 @@ class Node(object):
         # number of replies equal number of *followers* already in the ring, add peer to membership
         if len(self._req_responses[data]) == len(self.membership_ring):
             new_peer_hostname = self._sent_req_messages[data]
-            self.membership_ring.add_node(new_peer_hostname, new_peer_hostname)
+            self.membership_ring.add_node(new_peer_hostname)
 
             # Send newViewMessage
             self.current_view += 1
@@ -243,15 +242,18 @@ class Node(object):
             self.broadcast_message(nodes_to_broadcast, new_view_message)
 
         else:
-            print("Only received okay from %d peers. Need %d confirmations" % (len(self._req_responses[data]), len(self.membership_ring)))
+            print("Only received okay from %d peers. Need %d confirmations" % (
+            len(self._req_responses[data]), len(self.membership_ring)))
 
     def _process_new_view_message(self, data, sender):
         (view_id, peers) = data
         self.current_view = view_id
         for p in peers:
             if p not in self.membership_ring:
-                self.membership_ring.add_node(p, p)
-        print(self.membership_ring.get_all_hosts())
+                self.membership_ring.add_node(p)
+
+        print("current members: ", self.membership_ring.get_all_hosts())
+
     # request format:
     # object which contains
     # type
@@ -272,9 +274,9 @@ class Node(object):
     # then when the response is returned, complete_request will send the
     # output to the correct client or peer (or stdin)
     def start_request(self, rtype, args, sendBackTo, prev_req=None):
-        print("%s: New Request [ %s, %s ] for %s"%(
-                self.hostname,rtype,args,sendBackTo
-            ))
+        print("%s: New Request [ %s, %s ] for %s" % (
+            self.hostname, rtype, args, sendBackTo
+        ))
         req = Request(rtype, args, sendBackTo, previous_request=prev_req)  # create request obj
         self.ongoing_requests.append(req)  # set as ongoing
 
@@ -286,7 +288,6 @@ class Node(object):
         #     )
         # )
 
-
         # Find out if you can respond to this request
         if rtype == 'get':
             # add my information to the request
@@ -297,46 +298,46 @@ class Node(object):
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
             self.broadcast_message(replica_nodes, msg)
-            print("Sent getFile message to %s"%(replica_nodes))
+            print("Sent getFile message to %s" % (replica_nodes))
         elif rtype == 'put':
             self.db.storeFile(args[0], socket.gethostbyname(self.hostname), args[1], args[2])
-            my_resp = messages.storeFileResponse(args[0], args[1], args[2],req.time_created)
+            my_resp = messages.storeFileResponse(args[0], args[1], args[2], req.time_created)
             # add my information to the request
             self.update_request(messages._unpack_message(my_resp)[1], socket.gethostbyname(self.hostname), req)
             # send the storeFile message to everyone in the replication range
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
             self.broadcast_message(replica_nodes, msg)
-            print("Sent storeFile message to %s"%(replica_nodes))
+            print("Sent storeFile message to %s" % (replica_nodes))
         else:
             msg = messages.forwardedReq(req)
             # forward message to target node
             # self.connections[req.forwardedTo].sendall(msg)
-            self.broadcast_message([req.forwardedTo],msg)
-            print("Forwarded Request to %s"%(req.forwardedTo))
+            self.broadcast_message([req.forwardedTo], msg)
+            print("Forwarded Request to %s" % (req.forwardedTo))
 
-        print("Number of ongoing Requests: ",len(self.ongoing_requests))
+        print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
-    def find_req_for_msg(self,req_ts):
+    def find_req_for_msg(self, req_ts):
         return list(filter(
             lambda r: r.time_created == req_ts, self.ongoing_requests
         ))
 
     # after a \x70, \x80 or \x0B is encountered from a peer, this method is called
     def update_request(self, msg, sender, request=None):
-        print("Updating Request with message ",msg, " from ",sender)
-        if isinstance(msg,tuple):
+        print("Updating Request with message ", msg, " from ", sender)
+        if isinstance(msg, tuple):
             if not request:
                 request = self.find_req_for_msg(msg[-1])
             min_num_resp = self.sloppy_R if len(msg) == 3 else self.sloppy_W
-        else: 
+        else:
             request = self.find_req_for_msg(msg.previous_request.time_created)
             min_num_resp = 1
 
         if not request:
-            print("No request found, ",sender, " might have been too slow")
+            print("No request found, ", sender, " might have been too slow")
             return
-        elif isinstance(request,list):
+        elif isinstance(request, list):
             request = request[0]
 
         request.responses[sender] = msg
@@ -358,7 +359,7 @@ class Node(object):
         print("Completed Request ")
         if request.type == 'get':
             # if sendbackto is a peer
-            print("Response for client (name: ",request.hash,", results: ",self.coalesce_responses(request),") ")
+            print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(request), ") ")
             if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
@@ -369,7 +370,7 @@ class Node(object):
                 msg = messages.getResponse(request.hash, self.coalesce_responses(request))
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
-                print("Sucessful put completed for ",request.sendBackTo)
+                print("Sucessful put completed for ", request.sendBackTo)
             if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
@@ -380,7 +381,7 @@ class Node(object):
         else:  # request.type == for_*
             # unpack the forwarded request object
             data = list(request.responses.values())[0]
-            print("Request Response Data: ",data)
+            print("Request Response Data: ", data)
             # if sendbackto is a peer
             if request.sendBackTo not in self.client_list:
                 # unpickle the returned put request
@@ -393,38 +394,38 @@ class Node(object):
             elif request.type == 'for_put':
                 msg = messages.putResponse(request.hash, request.value, request.context)
             else:  # for_get
-                print("Response for client (name: ",request.hash,", results: ",self.coalesce_responses(data),") ")
+                print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
                 msg = messages.getResponse(request.hash, self.coalesce_responses(data))
 
         # send msg to request.sendBackTo
         if request.sendBackTo not in self.client_list:
-            self.broadcast_message([request.sendBackTo],msg)
+            self.broadcast_message([request.sendBackTo], msg)
         print(msg)
         # self.connections[request.sendBackTo].sendall(msg)
 
-        print("Sent results back to ",request.sendBackTo)
+        print("Sent results back to ", request.sendBackTo)
         # remove request from ongoing list
         self.ongoing_requests = list(filter(
             lambda r: r.time_created != request.time_created, self.ongoing_requests
         ))
-        print("Number of ongoing Requests: ",len(self.ongoing_requests))
+        print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
     def perform_operation(self, data, sendBackTo):
         if len(data) == 2:  # this is a getFile msg
-            print(sendBackTo, " is asking me to get ",data)
+            print(sendBackTo, " is asking me to get ", data)
             msg = messages.getFileResponse(data[0], self.db.getFile(data[0]), data[1])
         else:  # this is a storeFile msg
-            print(sendBackTo, " is asking me to store",data)
+            print(sendBackTo, " is asking me to store", data)
             self.db.storeFile(data[0], sendBackTo, data[1], data[2])
             msg = messages.storeFileResponse(*data)
 
-        self.broadcast_message([sendBackTo],msg)
+        self.broadcast_message([sendBackTo], msg)
         # self.connections[sendBackTo].sendall(msg)
-        print("Completed operation for ",sendBackTo)
+        print("Completed operation for ", sendBackTo)
 
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
-        print("Handling a forwarded request [ %s, %f ]"%(prev_req.type,prev_req.time_created))
+        print("Handling a forwarded request [ %s, %f ]" % (prev_req.type, prev_req.time_created))
         # someone forwarded you a put request
         # if you are the leader, check if you can takecare of it, else,
         # start a new put request with this request as the previous one
@@ -467,13 +468,20 @@ class Node(object):
         """Creates a socket to the host and adds it connections dict. Returns created socket object."""
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(10)  # 10 seconds
-        s.connect((hostname, self.tcp_port))
-        self.connections[socket.gethostbyname(hostname)] = s
-        return s
+        try:
+            s.connect((hostname, self.tcp_port))
+            self.connections[socket.gethostbyname(hostname)] = s
+            return s
+        except Exception:
+            print("Error creating connection to %s. Probably down?" % hostname)
+            return None
 
     # this is where we need to handle hinted handoff if a
     # peer is not responsive by asking another peer to hold the
     # message until the correct node recovers
     def broadcast_message(self, nodes, msg):
         for node in nodes:
-            self.connections.get(node, self._create_socket(node)).sendall(msg)
+            c = self.connections.get(node, self._create_socket(node))
+            if not c:
+                continue
+            c.sendall(msg)
