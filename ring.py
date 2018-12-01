@@ -71,6 +71,11 @@ class Ring(object):
     def __len__(self):
         return len(self._nodes) // self.vnode_count  # to account for vnode_count
 
+    def __contains__(self, node_id):
+        vnode_ids = list(self._generate_vnode_ids(node_id))
+
+        return self._generate_hash(vnode_ids[0]) in self._nodes
+
     # Helper functions to expose stable API
     def add_node(self, node_id, node_hostname):
         return self.__setitem__(node_id, node_hostname)
@@ -124,4 +129,8 @@ if __name__ == '__main__':
 
     print(len(r))
 
-    print(r.get_all_hosts())
+    # print(r.get_all_hosts())
+
+    print("node1" in r)
+    print("node100" in r)
+    print("node3" in r)

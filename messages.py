@@ -71,7 +71,7 @@ def okMessage(view_id, req_id):
 
 def newView(view_id, address):
     data = pickle.dumps((view_id, address))
-    return b'\x01' + struct.pack('!i', len(data)) + data
+    return b'\x10' + struct.pack('!i', len(data)) + data
 
 
 def clientConnectReq():

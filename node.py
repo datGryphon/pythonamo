@@ -25,29 +25,20 @@ class Node(object):
         if self.is_leader:
             self.membership_ring.add_node(leader_hostname, leader_hostname)
 
-        # todo: look into this
-        self.currently_adding_peer = False
+        # todo: look into this, do we need both?
+        self.bootstrapping = True
+        self.is_member = False
 
         self.sloppy_Qsize = sloppy_Qsize  # fraction of total members to replicate on
         # number of peers required for a read or write to succeed.
         self.sloppy_R = sloppy_R
         self.sloppy_W = sloppy_W
 
-        # saves all the pending membership messages
-        self._membership_messages = defaultdict(set)
+        # Book keeping for membership messages
+        self._req_responses = defaultdict(set)
+        self._sent_req_messages = {}
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
-
-        # Maps command to the corresponding function.
-        # Command arguments are passed as the first argument to the function.
-        self.command_registry = {  # Possible commands:
-            "add-node": self.register_node,  # 1. add node to membership
-            "remove-node": self.remove_node,  # 2. remove node from membership
-            "put": self.put_data,  # 3. put data
-            "get": self.get_data,  # 4. get data
-            "delete": lambda x: x,  # 5. delete data
-            "quit": lambda x: x  # 6. Quit
-        }
 
         # todo: eventually need to change this so table is persistent across crashes
         # eventually need to change this so table is persistent across crashes
@@ -61,6 +52,11 @@ class Node(object):
 
         # has hostnames mapped to open sockets
         self.connections = {}
+        self.dns = {}  # Maps IP to hostnames
+
+        _ip = socket.gethostbyname(leader_hostname)
+        print(_ip)
+        self.dns[_ip] = leader_hostname
 
     def accept_connections(self):
         incoming_connections = {self.tcp_socket}
@@ -87,16 +83,20 @@ class Node(object):
                         data = b''
                         while len(data) < message_len:
                             data += s.recv(message_len - len(data))
-                        print("Processing new message")
+
                         self._process_message(header+data, s.getpeername()[0])  # addr is a tuple of hostname and port
+                        # # todo: is there a better way to find hostname?
+                        # sender_hostname = self.dns[s.getpeername()[0]]
+                        # self._process_message(header+data, sender_hostname)
 
     def _process_message(self, data, sender):
         message_type, data_tuple = messages._unpack_message(data)
-        print(message_type, data_tuple)
 
-        message_type_mapping ={
+        message_type_mapping = {
             b'\x00': self._process_command,
-            b'\x01': self.register_node,
+            b'\x01': self._process_req_message,
+            b'\x10': self._process_new_view_message,
+            b'\xff': self._process_ok_message,
             b'\x07': self.perform_operation,
             b'\x08': self.perform_operation,
             b'\x70': self.update_request,
@@ -106,73 +106,82 @@ class Node(object):
         }
 
         message_type_mapping[message_type](data_tuple, sender)
+        return
 
     def _process_command(self, user_input, sendBackTo):
         """Process commands"""
+
+        # todo: if not self.leader, forward it to leader
+        if not self.is_leader:
+            print("Contact leader")
+            return
+
+        # Maps command to the corresponding function.
+        # Command arguments are passed as the first argument to the function.
+        command_registry = {  # Possible commands:
+            "add-node": self.add_node,  # 1. add node to membership
+            "remove-node": self.remove_node,  # 2. remove node from membership
+            "put": self.put_data,  # 3. put data
+            "get": self.get_data,  # 4. get data
+            "delete": lambda x: x,  # 5. delete data
+            "quit": lambda x: x  # 6. Quit
+        }
+
         if not user_input:
+            print("User input empty")
             return ""
 
         # First word is command. Rest are then arguments.
         command, *data = user_input.split(" ")
-        if command not in self.command_registry:
+        if command not in command_registry:
             return "Invalid command"
 
         # Call the function associated with the command in command_registry
         if command == 'put' or command == 'get':
-            return self.command_registry[command](data, sendBackTo)
+            return command_registry[command](data, sendBackTo)
         else:
-            return self.command_registry[command](data)
+            return command_registry[command](data)
 
-    def register_node(self, data, sender):
-        """Add node to membership. data[0] must be the hostname"""
+    def add_node(self, data):
+        """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
         if not data:
             return "Error: hostname required"
 
-        if self.is_leader:
-            print("Sending req message to peers")
-            new_peer_message = messages.reqMessage(self.current_view, self.membership_request_id, 1, data[0])
-            self._membership_messages[(self.current_view, self.membership_request_id)] = set()
-            self.broadcast_message(new_peer_message)
-            # todo: handle timer
-            return
+        print("Sending req message to peers")
+        new_peer_message = messages.reqMessage(self.current_view, self.membership_request_id, 1, data[0])
 
-        # peer sends OK messages
+        # associate hostname to (view_id, req_id)
+        self._sent_req_messages[(self.current_view, self.membership_request_id)] = data[0]
+        # ip = socket.gethostbyname(data[0])
+        # self.dns[ip] = data[0]
 
-        return "added " + data[0] + " to ring"
+        # broadcast to all but leader.
+        nodes_to_broadcast = self.membership_ring.get_all_hosts()
+        nodes_to_broadcast.remove(self.hostname)
+        nodes_to_broadcast.add(data[0])  # Add new host to broadcast list
 
-    def _create_socket(self, hostname):
-        """Creates a socket to the host and adds it connections dict. Returns created socket object."""
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(10)  # 10 seconds
-        s.connect((hostname, self.tcp_port))
-        self.connections[hostname] = s
-        return s
+        self.broadcast_message(nodes_to_broadcast, new_peer_message)
+        self.membership_request_id += 1
 
-    def broadcast_message(self, message):
-        for h in self.membership_ring.get_all_hosts():
-            conn = self.connections.get(h, self._create_socket(h))
-            conn.sendall(message)
+        # todo: handle timer
+        return
 
     # Send a remove node message to everyone and if you are that node, shutdown
     def remove_node(self, data):
         if not data:
             return "Error: hostname required"
-
         self.membership_ring.remove_node(data[0])
 
         return "removed " + data[0] + " from ring"
 
     def put_data(self, data, sendBackTo):
         if len(data) != 3:
-            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
-
-        data=[ data[0], json.loads(data[1]), data[2] ]
+            return "Error: Invalid operands\nInput: (<key>,<prev version>,<value>)"
+        data = [data[0], json.loads(data[1]), data[2]]
         key = data[0]
         prev = data[1]
         value = data[2]
-
         target_node = self.membership_ring.get_node_for_key(data[0])
-
         if not self.is_leader:
             # forward request to leader for client
             return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
@@ -188,9 +197,7 @@ class Node(object):
         """Retrieve V for given K from the database. data[0] must be the key"""
         if not data:
             return "Error: key required"
-
         target_node = self.membership_ring.get_node_for_key(data[0])
-
         # if I can do it myself
         if target_node == self.hostname:
             # I am processing a request for a client directly
@@ -199,15 +206,48 @@ class Node(object):
                 data[0], self.db.getFile(data[0]), self.hostname
             )
         else:  # forward the client request to the peer incharge of req
-            return self._request_data_from_peer(target_node, data[0])
+            return self._request_data_from_peer(target_node, data[0], sendBackTo)
 
-    # this is where we need to handle hinted handoff if a
-    # peer is not responsive by asking another peer to hold the
-    # message until the correct node recovers
-    def send_to_replicas(self, nodes, msg):
-        for node in nodes:
-            self.connections[node].sendall(msg)
+    def _process_req_message(self, data, sender):
+        # data = (view_id, req_id, operation, address)
+        (view_id, req_id, operation, address) = data
 
+        # todo: handle cases when not to send okay
+        # # New member. Send okay
+        # if not self.is_member:
+        #     ok_message =
+
+        print("Got req_message")
+        ok_message = messages.okMessage(view_id, req_id)
+        self.connections.get(sender, self._create_socket(sender)).sendall(ok_message)
+        print("Sent okay to %s" % sender)
+
+    def _process_ok_message(self, data, sender):
+        print("got okay message")
+        self._req_responses[data].add(sender)
+
+        # number of replies equal number of *followers* already in the ring, add peer to membership
+        if len(self._req_responses[data]) == len(self.membership_ring):
+            new_peer_hostname = self._sent_req_messages[data]
+            self.membership_ring.add_node(new_peer_hostname, new_peer_hostname)
+
+            # Send newViewMessage
+            self.current_view += 1
+            new_view_message = messages.newView(self.current_view, self.membership_ring.get_all_hosts())
+
+            nodes_to_broadcast = self.membership_ring.get_all_hosts()
+            nodes_to_broadcast.remove(self.hostname)
+            self.broadcast_message(nodes_to_broadcast, new_view_message)
+
+        else:
+            print("Only received okay from %d peers. Need %d confirmations" % (len(self._req_responses[data]), len(self.membership_ring)))
+
+    def _process_new_view_message(self, data, sender):
+        (view_id, peers) = data
+        self.current_view = view_id
+        for p in peers:
+            if p not in self.membership_ring:
+                self.membership_ring.add_node(p, p)
 
     # request format:
     # object which contains
@@ -247,7 +287,7 @@ class Node(object):
             # send the getFile message to everyone in the replication range
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
-            self.send_to_replicas(replica_nodes, msg)
+            self.broadcast_message(replica_nodes, msg)
         elif rtype == 'put':
             self.db.storeFile(args[0], self.hostname, args[1], args[2])
             my_resp = messages.storeFileResponse(args[0], args[1], args[2],req.time_created)
@@ -256,7 +296,7 @@ class Node(object):
             # send the storeFile message to everyone in the replication range
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
-            self.send_to_replicas(replica_nodes, msg)
+            self.broadcast_message(replica_nodes, msg)
         else:
             msg = messages.forwardedReq(req)
             # forward message to target node
@@ -350,43 +390,6 @@ class Node(object):
             lambda r: r != request, self.ongoing_requests
         ))
 
-    def put_data(self, data, sendBackTo):
-        if len(data) != 3:
-            return "Error: Invalid opperands\nInput: (<key>,<prev version>,<value>)"
-
-        key = data[0]
-        prev = data[1]
-        value = data[2]
-        target_node = self.membership_ring.get_node_for_key(data[0])
-
-        if not self.is_leader:
-            # forward request to leader for client
-            return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
-        else:  # I am the leader
-            if target_node == self.hostname:
-                # I'm processing a request for a client directly
-                self.start_request('put', data, sendBackTo=sendBackTo)
-                return "started put request for %s:%s locally [%s]" % (key, value, self.hostname)
-            else:  # I am forwarding a request from the client to the correct node
-                return self._send_data_to_peer(target_node, data, sendBackTo)
-
-    def get_data(self, data, sendBackTo):
-        """Retrieve V for given K from the database. data[0] must be the key"""
-        if not data:
-            return "Error: key required"
-
-        target_node = self.membership_ring.get_node_for_key(data[0])
-
-        # if I can do it myself
-        if target_node == self.hostname:
-            # I am processing a request for a client directly
-            self.start_request('get', data, sendBackTo=sendBackTo)
-            return "started get request for %s:%s locally [%s]" % (
-                data[0], self.db.getFile(data[0]), self.hostname
-            )
-        else:  # forward the client request to the peer incharge of req
-            return self._request_data_from_peer(target_node, data[0], sendBackTo=sendBackTo)
-
     def perform_operation(self, data, sendBackTo):
         if len(data) == 2:  # this is a getFile msg
             print(sendBackTo, " is asking me to get %s" % (data[0]))
@@ -437,3 +440,18 @@ class Node(object):
         self.start_request('for_get', (target_node, data), sendBackTo=sendBackTo)
 
         return "requesting data from %s" % target_node
+
+    def _create_socket(self, hostname):
+        """Creates a socket to the host and adds it connections dict. Returns created socket object."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(10)  # 10 seconds
+        s.connect((hostname, self.tcp_port))
+        self.connections[hostname] = s
+        return s
+
+    # this is where we need to handle hinted handoff if a
+    # peer is not responsive by asking another peer to hold the
+    # message until the correct node recovers
+    def broadcast_message(self, nodes, msg):
+        for node in nodes:
+            self.connections.get(node, self._create_socket(node)).sendall(msg)
