@@ -356,7 +356,7 @@ class Node(object):
         if request.type == 'get':
             # if sendbackto is a peer
             print("Response for client (name: ",request.hash,", results: ",self.coalesce_responses(request),") ")
-            if request.sendBackTo in self.membership_ring:
+            if request.previous_request:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
                 msg = messages.responseForForward(request)
@@ -367,7 +367,7 @@ class Node(object):
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
                 print("Sucessful put completed for ",request.sendBackTo)
-            if request.sendBackTo in self.membership_ring:
+            if request.previous_request:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
                 msg = messages.responseForForward(request)
@@ -378,7 +378,7 @@ class Node(object):
             # unpack the forwarded request object
             data = messages._unpack_message(request.response.values()[0][5:])
             # if sendbackto is a peer
-            if request.sendBackTo in self.membership_ring:
+            if request.previous_request:
                 # unpickle the returned put request
                 data.previous_request = data.previous_request.previous_request
                 # send the response object you got back to the peer
