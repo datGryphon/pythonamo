@@ -9,8 +9,8 @@ run-db-docker: stop-docker
 
 stop-docker:
 	docker-compose down
-	rm *.ring
-	rm *.db
+	rm -f *.ring
+	rm -f *.db
 
 run-client-docker:
 	docker-compose run client1

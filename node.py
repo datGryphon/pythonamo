@@ -54,7 +54,7 @@ class Node(object):
             with open(self.ring_log_file, 'r') as f:
                 hosts = f.readlines()
                 for h in hosts:
-                    self.membership_ring.add_node(h)
+                    self.membership_ring.add_node(h.strip())
             print("Restored from %s" % self.hostname + '.ring')
         except FileNotFoundError:
             pass
@@ -346,11 +346,6 @@ class Node(object):
         target_node = self.membership_ring.get_node_for_key(req.hash)
         replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
 
-        # print("Target Node for %s: %s\nReplica Nodes for %s: %s"%(
-        #         req.hash,target_node,req.hash,replica_nodes
-        #     )
-        # )
-
         T = Timer(self.request_timelimit + (1 if rtype[:3] == 'for' else 0),
                   self.complete_request, args=[req]
                   )
@@ -383,19 +378,23 @@ class Node(object):
             # forward message to target node
             # self.connections[req.forwardedTo].sendall(msg)
             if self.broadcast_message([req.forwardedTo], msg):
-                req.type = req.type[4:]
-
-                if req.type == 'get':
-                    msg = messages.getFile(req.hash, req.time_created)
-                else:
-                    msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
-
-                self.broadcast_message(replica_nodes, msg)
-                print("Leader is assuming roll of coordinator")
+                self.leader_to_coord(req)
             else:
                 print("Forwarded Request to %s" % req.forwardedTo)
 
         print("Number of ongoing Requests: ", len(self.ongoing_requests))
+
+    def leader_to_coord(self,req):
+        replica_nodes =  self.membership_ring.get_replicas_for_key(req.hash)
+        req.type = req.type[4:]
+
+        if req.type == 'get':
+            msg = messages.getFile(req.hash, req.time_created)
+        else:
+            msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
+
+        self.broadcast_message(replica_nodes, msg)
+        print("Leader is assuming roll of coordinator")
 
     def find_req_for_msg(self, req_ts):
         return list(filter(
@@ -434,7 +433,7 @@ class Node(object):
             results.extend([
                 tup for tup in resp[1] if tup not in results
             ])
-        return results
+        return self.db.sortData(results)
 
     def complete_request(self, request):
 
@@ -445,6 +444,7 @@ class Node(object):
         failed = (
             True if time.time() - request.time_created >= self.request_timelimit else False
         )
+        failed = False
 
         print("Completed Request ")
         if request.type == 'get':
@@ -486,7 +486,15 @@ class Node(object):
             data = list(request.responses.values())
 
             if not data:
-                msg = messages.responseForForward("Request timed out")
+                # del self.req_message_timers[request.time_created]
+                # request.time_created=time.time()
+                self.leader_to_coord(request)
+                T = Timer(self.request_timelimit,
+                  self.complete_request, args=[request]
+                  )
+                T.start()
+                self.req_message_timers[request.time_created] = T
+                return
             else:
                 data = data[0]
                 print("Request Response Data: ", data)
@@ -542,30 +550,34 @@ class Node(object):
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
         print("Handling a forwarded request [ %s, %f ]" % (prev_req.type, prev_req.time_created))
-        # someone forwarded you a put request
-        # if you are the leader, check if you can takecare of it, else,
-        # start a new put request with this request as the previous one
-        if prev_req.type == 'put' or prev_req.type == 'for_put':
-            if self.is_leader:
-                if target_node == self.hostname:
+        
+        if time.time() - prev_req.time_created < self.request_timelimit:
+            # someone forwarded you a put request
+            # if you are the leader, check if you can takecare of it, else,
+            # start a new put request with this request as the previous one
+            if prev_req.type == 'put' or prev_req.type == 'for_put':
+                if self.is_leader:
+                    if target_node == self.hostname:
+                        args = (prev_req.hash, prev_req.value, prev_req.context)
+                        self.start_request('put', args, sendBackTo, prev_req=prev_req)
+                        print("handling forwarded put request locally")
+                    else:
+                        args = (target_node, prev_req.hash,
+                                prev_req.value, prev_req.context
+                                )
+                        self.start_request('for_put', args, sendBackTo, prev_req)
+                        print("Forwarded Forwarded put request to correct node")
+                else:  # the leader is forwarding you a put
                     args = (prev_req.hash, prev_req.value, prev_req.context)
                     self.start_request('put', args, sendBackTo, prev_req=prev_req)
                     print("handling forwarded put request locally")
-                else:
-                    args = (target_node, prev_req.hash,
-                            prev_req.value, prev_req.context
-                            )
-                    self.start_request('for_put', args, sendBackTo, prev_req)
-                    print("Forwarded Forwarded put request to correct node")
-            else:  # the leader is forwarding you a put
-                args = (prev_req.hash, prev_req.value, prev_req.context)
-                self.start_request('put', args, sendBackTo, prev_req=prev_req)
-                print("handling forwarded put request locally")
-        # someone forwarded you a get request, you need to take care of it
-        # start new get request with this as the previous one
-        else:  # type is get or for_get
-            self.start_request('get', prev_req.hash, sendBackTo, prev_req)
-            print("handling forwarded get request locally")
+            # someone forwarded you a get request, you need to take care of it
+            # start new get request with this as the previous one
+            else:  # type is get or for_get
+                self.start_request('get', prev_req.hash, sendBackTo, prev_req)
+                print("handling forwarded get request locally")
+        else:
+            print("Throwing away stale request.")
 
     def _send_data_to_peer(self, target_node, data, sendBackTo):
 
@@ -588,7 +600,8 @@ class Node(object):
             s.connect((hostname, self.tcp_port))
             self.connections[socket.gethostbyname(hostname)] = s
             return s
-        except Exception:
+        except Exception as e:
+            print(e)
             print("Error creating connection to %s. Probably down?" % hostname)
             return None
 
