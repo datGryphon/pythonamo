@@ -3,7 +3,7 @@ import socket
 import struct
 import select
 import json
-
+import errno
 import messages
 from ring import Ring
 from request import Request
@@ -82,7 +82,10 @@ class Node(object):
 
                         data = b''
                         while len(data) < message_len:
-                            data += s.recv(message_len - len(data))
+                            try:
+                                data += s.recv(message_len - len(data))
+                            except socket.error as err:
+                                pass
 
                         self._process_message(header + data, s.getpeername()[0])  # addr is a tuple of hostname and port
                         # # todo: is there a better way to find hostname?
@@ -398,8 +401,8 @@ class Node(object):
                 msg = messages.getResponse(request.hash, self.coalesce_responses(data))
 
         # send msg to request.sendBackTo
-        if request.sendBackTo not in self.client_list:
-            self.broadcast_message([request.sendBackTo], msg)
+        # if request.sendBackTo not in self.client_list:
+        self.broadcast_message([request.sendBackTo], msg)
         print(msg)
         # self.connections[request.sendBackTo].sendall(msg)
 
