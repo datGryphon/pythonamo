@@ -1,4 +1,5 @@
 import logging
+import os
 import socket
 import struct
 import select
@@ -44,12 +45,24 @@ class Node(object):
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
 
+        self.log_prefix = '/code'
+        self.ring_log_file = os.path.join(self.log_prefix, self.hostname + '.ring')
+        self.db_path = os.path.join(self.log_prefix, self.hostname + '.db')
+        print(self.ring_log_file)
+
+        try:
+            with open(self.ring_log_file, 'r') as f:
+                hosts = f.readlines()
+                for h in hosts:
+                    self.membership_ring.add_node(h)
+            print("Restored from %s" % self.hostname + '.ring')
+        except FileNotFoundError:
+            pass
+
         self.request_timelimit = 2.0
         self.req_message_timers = {}
 
-        # todo: eventually need to change this so table is persistent across crashes
-        # eventually need to change this so table is persistent across crashes
-        self.db = Storage(self.hostname+'.db')  # set up sqlite table in memory
+        self.db = Storage(self.db_path)  # set up sqlite table
 
         # create tcp socket for communication with peers and clients
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -172,7 +185,6 @@ class Node(object):
         self._sent_req_messages[(self.current_view, self.membership_request_id)] = data[0]
         self._req_sender[(self.current_view, self.membership_request_id)] = sender
 
-
         # broadcast to all but leader.
         nodes_to_broadcast = self.membership_ring.get_all_hosts()
         nodes_to_broadcast.remove(self.hostname)
@@ -282,13 +294,16 @@ class Node(object):
             print("Only received okay from %d peers. Need %d confirmations" % (
                 len(self._req_responses[data]), len(self.membership_ring)), self._req_responses[data])
 
-
     def _process_new_view_message(self, data, sender):
         (view_id, peers) = data
         self.current_view = view_id
         for p in peers:
             if p not in self.membership_ring:
                 self.membership_ring.add_node(p)
+
+        with open(self.ring_log_file, 'w') as f:
+            for node in self.membership_ring.get_all_hosts():
+                f.write(node + '\n')
 
         print("current members: ", self.membership_ring.get_all_hosts())
 
@@ -336,11 +351,11 @@ class Node(object):
         #     )
         # )
 
-        T = Timer( self.request_timelimit + ( 1 if rtype[:3] == 'for' else 0 ),
-            self.complete_request, args=[req]
-        )
+        T = Timer(self.request_timelimit + (1 if rtype[:3] == 'for' else 0),
+                  self.complete_request, args=[req]
+                  )
         T.start()
-        self.req_message_timers[req.time_created]=T
+        self.req_message_timers[req.time_created] = T
 
         # Find out if you can respond to this request
         if rtype == 'get':
@@ -368,14 +383,14 @@ class Node(object):
             # forward message to target node
             # self.connections[req.forwardedTo].sendall(msg)
             if self.broadcast_message([req.forwardedTo], msg):
-                req.type=req.type[4:]
+                req.type = req.type[4:]
 
                 if req.type == 'get':
-                    msg = messages.getFile(req.hash,req.time_created)
+                    msg = messages.getFile(req.hash, req.time_created)
                 else:
-                    msg = messages.storeFile(req.hash,req.value,req.context,req.time_created)
+                    msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
 
-                self.broadcast_message(replica_nodes,msg)
+                self.broadcast_message(replica_nodes, msg)
                 print("Leader is assuming roll of coordinator")
             else:
                 print("Forwarded Request to %s" % req.forwardedTo)
@@ -427,7 +442,7 @@ class Node(object):
         # (peername,msg) tuples for hinted handoff
         handoffs = []
 
-        failed=(
+        failed = (
             True if time.time() - request.time_created >= self.request_timelimit else False
         )
 
@@ -458,7 +473,7 @@ class Node(object):
                 msg = messages.putResponse(request.hash, (
                     request.value if len(request.responses) >= self.sloppy_W and not failed else "Error"
                 ), request.context)
-            #if not a failed put
+            # if not a failed put
             # if len(request.responses) >= self.sloppy_W and not failed:
             #     #create a handoff message for each peer you did not get a response from
             #     replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
@@ -473,7 +488,7 @@ class Node(object):
             if not data:
                 msg = messages.responseForForward("Request timed out")
             else:
-                data=data[0]
+                data = data[0]
                 print("Request Response Data: ", data)
                 # if sendbackto is a peer
                 if request.sendBackTo not in self.client_list:
@@ -489,7 +504,8 @@ class Node(object):
                         request.value if data and len(data.responses) >= self.sloppy_W and not failed else "Error"
                     ), request.context)
                 else:  # for_get
-                    print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
+                    print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data),
+                          ") ")
                     msg = messages.getResponse(request.hash, (
                         self.coalesce_responses(data) if not failed else "Error"
                     ))
@@ -511,7 +527,7 @@ class Node(object):
         if len(data) == 2:  # this is a getFile msg
             print(sendBackTo, " is asking me to get ", data)
             msg = messages.getFileResponse(data[0], self.db.getFile(data[0]), data[1])
-        else:  # this is a storeFile 
+        else:  # this is a storeFile
             if data[0][:5] == 'sleep':
                 print(data)
                 time.sleep(int(data[2]))
@@ -580,7 +596,7 @@ class Node(object):
     # peer is not responsive by asking another peer to hold the
     # message until the correct node recovers
     def broadcast_message(self, nodes, msg):
-        fails=[]
+        fails = []
         for node in nodes:
             c = self.connections.get(node, self._create_socket(node))
             if not c:
