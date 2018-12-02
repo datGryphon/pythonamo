@@ -4,7 +4,8 @@ import struct
 import select
 import time
 import json
-import errno
+from threading import Timer
+
 import messages
 from ring import Ring
 from request import Request
@@ -41,7 +42,10 @@ class Node(object):
         self._sent_req_messages = {}
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
-        self.request_timelimit=2.0
+
+        self.request_timelimit = 2.0
+        self.req_message_timers = {}
+
         # todo: eventually need to change this so table is persistent across crashes
         # eventually need to change this so table is persistent across crashes
         self.db = Storage(':memory:')  # set up sqlite table in memory
@@ -154,6 +158,7 @@ class Node(object):
             return "Error: hostname required"
 
         print("Sending req message to peers")
+        print("Adding new node: %s : %s" % (self.current_view, self.membership_request_id))
         new_peer_message = messages.reqMessage(self.current_view, self.membership_request_id, 1, data[0])
 
         # associate hostname to (view_id, req_id)
@@ -167,9 +172,16 @@ class Node(object):
         nodes_to_broadcast.add(data[0])  # Add new host to broadcast list
 
         self.broadcast_message(nodes_to_broadcast, new_peer_message)
-        self.membership_request_id += 1
 
         # todo: handle timer
+        t = Timer(self.request_timelimit, self._timeout_request, args=[(self.current_view, self.membership_request_id)])
+        self.req_message_timers[(self.current_view, self.membership_request_id)] = t
+        t.start()
+
+        print("timer started")
+
+        self.membership_request_id += 1
+
         return
 
     # Send a remove node message to everyone and if you are that node, shutdown
@@ -234,6 +246,16 @@ class Node(object):
 
         # number of replies equal number of *followers* already in the ring, add peer to membership
         if len(self._req_responses[data]) == len(self.membership_ring):
+
+            # Cancel timer
+            t = self.req_message_timers.get(data, None)
+            if not t:
+                print("No timer, what happened?")
+                return
+
+            print("Cancelling timer...")
+            t.cancel()
+
             new_peer_hostname = self._sent_req_messages[data]
             self.membership_ring.add_node(new_peer_hostname)
 
@@ -247,7 +269,7 @@ class Node(object):
 
         else:
             print("Only received okay from %d peers. Need %d confirmations" % (
-            len(self._req_responses[data]), len(self.membership_ring)))
+                len(self._req_responses[data]), len(self.membership_ring)))
 
     def _process_new_view_message(self, data, sender):
         (view_id, peers) = data
@@ -257,6 +279,10 @@ class Node(object):
                 self.membership_ring.add_node(p)
 
         print("current members: ", self.membership_ring.get_all_hosts())
+
+    def _timeout_request(self, request):
+        # todo: send failure
+        print(request)
 
     # request format:
     # object which contains
@@ -302,7 +328,7 @@ class Node(object):
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
             self.broadcast_message(replica_nodes, msg)
-            print("Sent getFile message to %s" % (replica_nodes))
+            print("Sent getFile message to %s" % replica_nodes)
         elif rtype == 'put':
             self.db.storeFile(args[0], socket.gethostbyname(self.hostname), args[1], args[2])
             my_resp = messages.storeFileResponse(args[0], args[1], args[2], req.time_created)
@@ -312,13 +338,13 @@ class Node(object):
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
             self.broadcast_message(replica_nodes, msg)
-            print("Sent storeFile message to %s" % (replica_nodes))
+            print("Sent storeFile message to %s" % replica_nodes)
         else:
             msg = messages.forwardedReq(req)
             # forward message to target node
             # self.connections[req.forwardedTo].sendall(msg)
             self.broadcast_message([req.forwardedTo], msg)
-            print("Forwarded Request to %s" % (req.forwardedTo))
+            print("Forwarded Request to %s" % req.forwardedTo)
 
         print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
@@ -350,7 +376,7 @@ class Node(object):
 
     def coalesce_responses(self, request):
         resp_list = list(request.responses.values())
-        #check if you got a sufficient number of responses
+        # check if you got a sufficient number of responses
         if len(resp_list) < self.sloppy_R:
             return None
         results = []
@@ -363,7 +389,7 @@ class Node(object):
 
     def complete_request(self, request):
 
-        failed=(
+        failed = (
             True if time.time() - request.time_created >= self.request_timelimit else False
         )
 
@@ -378,7 +404,7 @@ class Node(object):
             else:
                 # compile results from responses and send them to client
                 # send message to client
-                msg = messages.getResponse(request.hash,(
+                msg = messages.getResponse(request.hash, (
                     self.coalesce_responses(request) if not failed else None
                 ))
         elif request.type == 'put':
@@ -390,8 +416,8 @@ class Node(object):
                 msg = messages.responseForForward(request)
             else:
                 # send success message to client
-                #check if you were successful
-                msg = messages.putResponse(request.hash,(
+                # check if you were successful
+                msg = messages.putResponse(request.hash, (
                     request.value if len(request.responses) >= self.sloppy_W and not failed else None
                 ), request.context)
         else:  # request.type == for_*
@@ -408,7 +434,7 @@ class Node(object):
                 # so it looks like you did the request yourself
                 msg = messages.responseForForward(data)
             elif request.type == 'for_put':
-                msg = messages.putResponse(request.hash,(
+                msg = messages.putResponse(request.hash, (
                     request.value if len(data.responses) >= self.sloppy_W and not failed else None
                 ), request.context)
             else:  # for_get

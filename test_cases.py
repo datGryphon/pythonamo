@@ -36,7 +36,7 @@ def add_nodes():
         msg = messages.client_message("add-node %s" % node)
         s.sendall(msg)
 
-        time.sleep(1)
+        time.sleep(3)
 
 
 if __name__ == '__main__':
