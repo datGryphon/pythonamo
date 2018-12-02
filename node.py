@@ -367,8 +367,18 @@ class Node(object):
             msg = messages.forwardedReq(req)
             # forward message to target node
             # self.connections[req.forwardedTo].sendall(msg)
-            self.broadcast_message([req.forwardedTo], msg)
-            print("Forwarded Request to %s" % req.forwardedTo)
+            if self.broadcast_message([req.forwardedTo], msg):
+                req.type=req.type[4:]
+
+                if req.type == 'get':
+                    msg = messages.getFile(req.hash,req.time_created)
+                else:
+                    msg = messages.storeFile(req.hash,req.value,req.context,req.time_created)
+
+                self.broadcast_message(replica_nodes,msg)
+                print("Leader is assuming roll of coordinator")
+            else:
+                print("Forwarded Request to %s" % req.forwardedTo)
 
         print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
@@ -461,7 +471,7 @@ class Node(object):
             data = list(request.responses.values())
 
             if not data:
-                msg = responseForForward("Request timed out")
+                msg = messages.responseForForward("Request timed out")
             else:
                 data=data[0]
                 print("Request Response Data: ", data)
@@ -570,8 +580,12 @@ class Node(object):
     # peer is not responsive by asking another peer to hold the
     # message until the correct node recovers
     def broadcast_message(self, nodes, msg):
+        fails=[]
         for node in nodes:
             c = self.connections.get(node, self._create_socket(node))
             if not c:
+                fails.append(node)
                 continue
             c.sendall(msg)
+
+        return fails
