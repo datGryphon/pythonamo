@@ -349,7 +349,9 @@ class Node(object):
 
     def coalesce_responses(self, request):
         resp_list = list(request.responses.values())
-        # print("Responses:\n\n\n",resp_list,'\n\n\n',flush=True)
+        #check if you got a sufficient number of responses
+        if len(resp_list) < self.sloppy_R:
+            return None
         results = []
         for resp in resp_list:
             # print(resp)
@@ -380,7 +382,10 @@ class Node(object):
                 msg = messages.responseForForward(request)
             else:
                 # send success message to client
-                msg = messages.putResponse(request.hash, request.value, request.context)
+                #check if you were successful
+                msg = messages.putResponse(request.hash,(
+                    request.value if len(request.responses) >= self.sloppy_W else None
+                ), request.context)
         else:  # request.type == for_*
             # unpack the forwarded request object
             data = list(request.responses.values())[0]
@@ -395,7 +400,9 @@ class Node(object):
                 # so it looks like you did the request yourself
                 msg = messages.responseForForward(data)
             elif request.type == 'for_put':
-                msg = messages.putResponse(request.hash, request.value, request.context)
+                msg = messages.putResponse(request.hash,(
+                    request.value if len(data.responses) >= self.sloppy_W else None
+                ), request.context)
             else:  # for_get
                 print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
                 msg = messages.getResponse(request.hash, self.coalesce_responses(data))
