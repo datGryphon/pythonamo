@@ -2,6 +2,7 @@ import logging
 import socket
 import struct
 import select
+import time
 import json
 import errno
 import messages
@@ -40,7 +41,7 @@ class Node(object):
         self._sent_req_messages = {}
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
-
+        self.request_timelimit=2.0
         # todo: eventually need to change this so table is persistent across crashes
         # eventually need to change this so table is persistent across crashes
         self.db = Storage(':memory:')  # set up sqlite table in memory
@@ -361,6 +362,11 @@ class Node(object):
         return results
 
     def complete_request(self, request):
+
+        failed=(
+            True if time.time() - request.time_created >= self.request_timelimit else False
+        )
+
         print("Completed Request ")
         if request.type == 'get':
             # if sendbackto is a peer
@@ -372,7 +378,9 @@ class Node(object):
             else:
                 # compile results from responses and send them to client
                 # send message to client
-                msg = messages.getResponse(request.hash, self.coalesce_responses(request))
+                msg = messages.getResponse(request.hash,(
+                    self.coalesce_responses(request) if not failed else None
+                ))
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
                 print("Sucessful put completed for ", request.sendBackTo)
@@ -384,7 +392,7 @@ class Node(object):
                 # send success message to client
                 #check if you were successful
                 msg = messages.putResponse(request.hash,(
-                    request.value if len(request.responses) >= self.sloppy_W else None
+                    request.value if len(request.responses) >= self.sloppy_W and not failed else None
                 ), request.context)
         else:  # request.type == for_*
             # unpack the forwarded request object
@@ -401,11 +409,13 @@ class Node(object):
                 msg = messages.responseForForward(data)
             elif request.type == 'for_put':
                 msg = messages.putResponse(request.hash,(
-                    request.value if len(data.responses) >= self.sloppy_W else None
+                    request.value if len(data.responses) >= self.sloppy_W and not failed else None
                 ), request.context)
             else:  # for_get
                 print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
-                msg = messages.getResponse(request.hash, self.coalesce_responses(data))
+                msg = messages.getResponse(request.hash, (
+                    self.coalesce_responses(data) if not failed else None
+                ))
 
         # send msg to request.sendBackTo
         # if request.sendBackTo not in self.client_list:
@@ -424,7 +434,10 @@ class Node(object):
         if len(data) == 2:  # this is a getFile msg
             print(sendBackTo, " is asking me to get ", data)
             msg = messages.getFileResponse(data[0], self.db.getFile(data[0]), data[1])
-        else:  # this is a storeFile msg
+        else:  # this is a storeFile 
+            if data[0][:5] == 'sleep':
+                print(data)
+                time.sleep(int(data[2]))
             print(sendBackTo, " is asking me to store", data)
             self.db.storeFile(data[0], sendBackTo, data[1], data[2])
             msg = messages.storeFileResponse(*data)

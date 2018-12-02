@@ -23,9 +23,9 @@ nodes = [
     "vdi-linux-032.ccs.neu.edu",
     "vdi-linux-033.ccs.neu.edu",
     "vdi-linux-034.ccs.neu.edu",
-    # "vdi-linux-035.ccs.neu.edu",
-    # "vdi-linux-036.ccs.neu.edu",
-    # "vdi-linux-037.ccs.neu.edu",
+    "vdi-linux-035.ccs.neu.edu",
+    "vdi-linux-036.ccs.neu.edu",
+    "vdi-linux-037.ccs.neu.edu",
     # "vdi-linux-038.ccs.neu.edu",
     # "vdi-linux-039.ccs.neu.edu",
 ]
