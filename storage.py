@@ -62,9 +62,9 @@ class Storage(object):
 
         c = conn.cursor()
 
-        c.execute('''DROP TABLE IF EXISTS storage;''')
+        # c.execute('''DROP TABLE IF EXISTS storage;''')
 
-        c.execute('''CREATE TABLE storage (
+        c.execute('''CREATE TABLE IF NOT EXISTS storage (
                 id INT PRIMARY KEY,
                 hash TEXT NOT NULL,
                 version TEXT NOT NULL,

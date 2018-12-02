@@ -49,7 +49,7 @@ class Node(object):
 
         # todo: eventually need to change this so table is persistent across crashes
         # eventually need to change this so table is persistent across crashes
-        self.db = Storage(':memory:')  # set up sqlite table in memory
+        self.db = Storage(self.hostname+'.db')  # set up sqlite table in memory
 
         # create tcp socket for communication with peers and clients
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -336,6 +336,12 @@ class Node(object):
         #     )
         # )
 
+        T = Timer( self.request_timelimit + ( 1 if rtype[:3] == 'for' else 0 ),
+            self.complete_request, args=[req]
+        )
+        T.start()
+        self.req_message_timers[req.time_created]=T
+
         # Find out if you can respond to this request
         if rtype == 'get':
             # add my information to the request
@@ -407,7 +413,11 @@ class Node(object):
 
     def complete_request(self, request):
 
-        failed = (
+        self.req_message_timers[request.time_created].cancel()
+        # (peername,msg) tuples for hinted handoff
+        handoffs = []
+
+        failed=(
             True if time.time() - request.time_created >= self.request_timelimit else False
         )
 
@@ -423,7 +433,7 @@ class Node(object):
                 # compile results from responses and send them to client
                 # send message to client
                 msg = messages.getResponse(request.hash, (
-                    self.coalesce_responses(request) if not failed else None
+                    self.coalesce_responses(request) if not failed else "Error"
                 ))
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
@@ -436,30 +446,43 @@ class Node(object):
                 # send success message to client
                 # check if you were successful
                 msg = messages.putResponse(request.hash, (
-                    request.value if len(request.responses) >= self.sloppy_W and not failed else None
+                    request.value if len(request.responses) >= self.sloppy_W and not failed else "Error"
                 ), request.context)
+            #if not a failed put
+            # if len(request.responses) >= self.sloppy_W and not failed:
+            #     #create a handoff message for each peer you did not get a response from
+            #     replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
+
+            #     needs_handoff = [ r for r in replica_nodes if r not in request.responses]
+
+
         else:  # request.type == for_*
             # unpack the forwarded request object
-            data = list(request.responses.values())[0]
-            print("Request Response Data: ", data)
-            # if sendbackto is a peer
-            if request.sendBackTo not in self.client_list:
-                # unpickle the returned put request
-                data.previous_request = data.previous_request.previous_request
-                # send the response object you got back to the peer
-                # from request.responses (it is the put or get they need)
-                # if you need to, make req.prev_req = req.prev_req.prev_req
-                # so it looks like you did the request yourself
-                msg = messages.responseForForward(data)
-            elif request.type == 'for_put':
-                msg = messages.putResponse(request.hash, (
-                    request.value if len(data.responses) >= self.sloppy_W and not failed else None
-                ), request.context)
-            else:  # for_get
-                print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
-                msg = messages.getResponse(request.hash, (
-                    self.coalesce_responses(data) if not failed else None
-                ))
+            data = list(request.responses.values())
+
+            if not data:
+                msg = responseForForward("Request timed out")
+            else:
+                data=data[0]
+                print("Request Response Data: ", data)
+                # if sendbackto is a peer
+                if request.sendBackTo not in self.client_list:
+                    # unpickle the returned put request
+                    data.previous_request = data.previous_request.previous_request
+                    # send the response object you got back to the peer
+                    # from request.responses (it is the put or get they need)
+                    # if you need to, make req.prev_req = req.prev_req.prev_req
+                    # so it looks like you did the request yourself
+                    msg = messages.responseForForward(data)
+                elif request.type == 'for_put':
+                    msg = messages.putResponse(request.hash, (
+                        request.value if data and len(data.responses) >= self.sloppy_W and not failed else "Error"
+                    ), request.context)
+                else:  # for_get
+                    print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data), ") ")
+                    msg = messages.getResponse(request.hash, (
+                        self.coalesce_responses(data) if not failed else "Error"
+                    ))
 
         # send msg to request.sendBackTo
         # if request.sendBackTo not in self.client_list:
