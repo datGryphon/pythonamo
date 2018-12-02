@@ -1,3 +1,4 @@
+import socket
 from collections import defaultdict
 from hashlib import md5
 import bisect
@@ -19,6 +20,8 @@ class Ring(object):
 
         self._vnode_hashes = []
         self._nodes = {}
+
+        self._dns = {}
 
         self._generate_hash = lambda key: int(md5(key.encode('utf-8')).hexdigest(), 16)
         self._generate_vnode_ids = lambda node_id: (node_id + '_' + str(i) for i in range(self.vnode_count))
@@ -78,6 +81,8 @@ class Ring(object):
 
     # Helper functions to expose stable API
     def add_node(self, node_hostname):
+        ip = socket.gethostbyname(node_hostname)
+        self._dns[ip] = node_hostname
         return self.__setitem__(node_hostname, node_hostname)
 
     def remove_node(self, node_id):
@@ -100,15 +105,27 @@ class Ring(object):
     def get_all_hosts(self):
         return set(self._nodes.values())
 
+    def get_handoff_node(self, node_ip):
+        hostname = self._dns[node_ip]
+        # hostname = node_ip
+        vnode_ids = list(self._generate_vnode_ids(hostname))
+
+        index = self._get_nearest_hash_index(self._generate_hash(vnode_ids[0]))
+        handoff_index = (index + self.replica_count) % len(self._vnode_hashes)
+
+        return self._nodes[self._vnode_hashes[handoff_index]]
+
 
 if __name__ == '__main__':
-    r = Ring(vnode_count=5, replica_count=3)
+    r = Ring(vnode_count=1, replica_count=3)
 
     r.add_node("node1.hostname")
     r.add_node("node2.hostname")
     r.add_node("node3.hostname")
     r.add_node("node4.hostname")
     r.add_node("node5.hostname")
+    r.add_node("node6.hostname")
+    r.add_node("node7.hostname")
 
     # Try inserting a key
     target_hostname = r.get_node_for_key("key1")
@@ -134,3 +151,14 @@ if __name__ == '__main__':
     print("node1.hostname" in r)
     print("node100" in r)
     print("node3" in r)
+
+    print(r.get_all_hosts())
+
+    # print node arrangement:
+    print("ring structure:")
+    sids = sorted(r._vnode_hashes)
+    for s in sids:
+        print(r._nodes[s])
+    print('\n\n\n')
+
+    # print(r.get_handoff_node("node1.hostname"))
