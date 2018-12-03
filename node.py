@@ -33,6 +33,8 @@ class Node(object):
         self.bootstrapping = True
         self.is_member = False
 
+        self._adding_node = False
+
         self.sloppy_Qsize = sloppy_Qsize  # fraction of total members to replicate on
         # number of peers required for a read or write to succeed.
         self.sloppy_R = sloppy_R
@@ -45,7 +47,7 @@ class Node(object):
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
 
-        self.log_prefix = '/code'
+        self.log_prefix = os.getcwd()
         self.ring_log_file = os.path.join(self.log_prefix, self.hostname + '.ring')
         self.db_path = os.path.join(self.log_prefix, self.hostname + '.db')
         print(self.ring_log_file)
@@ -169,17 +171,24 @@ class Node(object):
         # Call the function associated with the command in command_registry
         return command_registry[command](data, sendBackTo)
 
-    def handle_handoff(self,msg,sendBackTo):
-        print("New Handoff message!!!",msg)
+    def handle_handoff(self, msg, sendBackTo):
+        print("New Handoff message!!!", msg)
 
     def add_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
         if not data:
             return "Error: hostname required"
 
+        if self._adding_node:
+            print("Node adding in progress...")
+            self._send_req_response_to_client(sender, "adding node")
+            return
+
         if data[0] in self.membership_ring:
             self._send_req_response_to_client(sender, "Already in the membership")
             return
+
+        self._adding_node = True
 
         print("Sending req message to peers")
         print("Adding new node: %s : %s" % (self.current_view, self.membership_request_id))
@@ -294,6 +303,8 @@ class Node(object):
             print("sending success to client: %s" % client)
             self._send_req_response_to_client(client, "Successfully added node to the network")
 
+            self._adding_node = False
+
         else:
             print("Only received okay from %d peers. Need %d confirmations" % (
                 len(self._req_responses[data]), len(self.membership_ring)), self._req_responses[data])
@@ -313,9 +324,9 @@ class Node(object):
 
     def _req_timeout(self, req_id):
         print("request ", req_id, "timed out.")
-        # todo: send failure
         sender = self._req_sender.get(req_id, None)
         self._send_req_response_to_client(sender, "Failed to add node to the network")
+        self._adding_node = False
 
     def _send_req_response_to_client(self, client, message):
         msg = messages.responseForForward(message)
@@ -351,7 +362,7 @@ class Node(object):
         replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
 
         T = Timer(self.request_timelimit + (1 if rtype[:3] == 'for' else 0),
-                  self.complete_request, args=[req], kwargs={"timer_expired":True}
+                  self.complete_request, args=[req], kwargs={"timer_expired": True}
                   )
         T.start()
         self.req_message_timers[req.time_created] = T
@@ -388,8 +399,8 @@ class Node(object):
 
         print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
-    def leader_to_coord(self,req):
-        replica_nodes =  self.membership_ring.get_replicas_for_key(req.hash)
+    def leader_to_coord(self, req):
+        replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
         req.type = req.type[4:]
 
         if req.type == 'get':
@@ -475,27 +486,27 @@ class Node(object):
                 msg = messages.putResponse(request.hash, (
                     request.value if len(request.responses) >= self.sloppy_W and not failed else "Error"
                 ), request.context)
-            
+
             if len(request.responses) >= self.sloppy_W and timer_expired:
                 target_node = self.membership_ring.get_node_for_key(request.hash)
                 replica_nodes = self.membership_ring.get_replicas_for_key(request.hash)
-                
-                all_nodes = set([target_node]+replica_nodes)
-                missing_reps = set([ socket.gethostbyname(r) for r in all_nodes]) - set(request.responses.keys())
+
+                all_nodes = set([target_node] + replica_nodes)
+                missing_reps = set([socket.gethostbyname(r) for r in all_nodes]) - set(request.responses.keys())
 
                 print(all_nodes, missing_reps, set(request.responses.keys()))
 
                 handoff_msg = messages.handoff(
-                    messages.storeFile(request.hash,request.value,request.context,request.time_created),
+                    messages.storeFile(request.hash, request.value, request.context, request.time_created),
                     missing_reps
                 )
 
-                hons = [ 
+                hons = [
                     self.membership_ring.get_handoff_node(r)
                     for r in missing_reps
                 ]
-                
-                self.broadcast_message(hons,handoff_msg)
+
+                self.broadcast_message(hons, handoff_msg)
 
         else:  # request.type == for_*
             # unpack the forwarded request object
@@ -506,8 +517,8 @@ class Node(object):
                 # request.time_created=time.time()
                 self.leader_to_coord(request)
                 T = Timer(self.request_timelimit,
-                  self.complete_request, args=[request], kwargs={"timer_expired":True}
-                  )
+                          self.complete_request, args=[request], kwargs={"timer_expired": True}
+                          )
                 T.start()
                 self.req_message_timers[request.time_created] = T
                 return
@@ -538,7 +549,7 @@ class Node(object):
         # if request.sendBackTo not in self.client_list:
         if not request.responded:
             self.broadcast_message([request.sendBackTo], msg)
-            request.responded=True
+            request.responded = True
 
             print(msg)
             # self.connections[request.sendBackTo].sendall(msg)
@@ -571,7 +582,7 @@ class Node(object):
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
         print("Handling a forwarded request [ %s, %f ]" % (prev_req.type, prev_req.time_created))
-        
+
         if time.time() - prev_req.time_created < self.request_timelimit:
             # someone forwarded you a put request
             # if you are the leader, check if you can takecare of it, else,

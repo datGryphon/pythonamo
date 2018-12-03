@@ -3,8 +3,9 @@ version: '3.5'
 services:
   machine1:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-030.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -15,8 +16,9 @@ services:
 
   machine2:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-031.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -27,8 +29,9 @@ services:
 
   machine3:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-032.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -39,8 +42,9 @@ services:
 
   machine4:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-033.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -50,8 +54,9 @@ services:
 
   machine5:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-034.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -61,8 +66,9 @@ services:
 
   machine6:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-035.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -72,8 +78,9 @@ services:
 
   machine7:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-036.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -83,8 +90,9 @@ services:
 
   machine8:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-037.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -94,8 +102,9 @@ services:
 
   machine9:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-038.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -105,8 +114,9 @@ services:
 
   machine10:
     image: python:3
-    command: python -u /code/dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u dynamo.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-039.ccs.neu.edu
+    working_dir: /code
     networks:
       neunet:
         aliases:
@@ -116,8 +126,9 @@ services:
 
   client1:
     image: python:3
-    command: python -u /code/client.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u client.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-040.ccs.neu.edu
+    working_dir: /code
     stdin_open: true
     tty: true
     networks:
@@ -129,8 +140,9 @@ services:
 
   testcases:
     image: python:3
-    command: python -u /code/test_cases.py --leader vdi-linux-030.ccs.neu.edu --port 13337
+    command: python -u test_cases.py --leader vdi-linux-030.ccs.neu.edu --port 13337
     hostname: vdi-linux-041.ccs.neu.edu
+    working_dir: /code
     stdin_open: true
     tty: true
     networks:
