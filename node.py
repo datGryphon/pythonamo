@@ -130,6 +130,7 @@ class Node(object):
             b'\x80': self.update_request,
             b'\x0B': self.update_request,
             b'\x0A': self.handle_forwarded_req,
+            b'\x0C': self.handle_handoff
         }
 
         message_type_mapping[message_type](data_tuple, sender)
@@ -167,6 +168,9 @@ class Node(object):
 
         # Call the function associated with the command in command_registry
         return command_registry[command](data, sendBackTo)
+
+    def handle_handoff(self,msg,sendBackTo):
+        print("New Handoff message!!!",msg)
 
     def add_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
@@ -347,7 +351,7 @@ class Node(object):
         replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
 
         T = Timer(self.request_timelimit + (1 if rtype[:3] == 'for' else 0),
-                  self.complete_request, args=[req]
+                  self.complete_request, args=[req], kwargs={"timer_expired":True}
                   )
         T.start()
         self.req_message_timers[req.time_created] = T
@@ -435,15 +439,12 @@ class Node(object):
             ])
         return self.db.sortData(results)
 
-    def complete_request(self, request):
+    def complete_request(self, request, timer_expired=False):
 
-        self.req_message_timers[request.time_created].cancel()
+        # self.req_message_timers[request.time_created].cancel()
         # (peername,msg) tuples for hinted handoff
         handoffs = []
 
-        failed = (
-            True if time.time() - request.time_created >= self.request_timelimit else False
-        )
         failed = False
 
         print("Completed Request ")
@@ -463,6 +464,7 @@ class Node(object):
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
                 print("Sucessful put completed for ", request.sendBackTo)
+
             if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
@@ -473,13 +475,27 @@ class Node(object):
                 msg = messages.putResponse(request.hash, (
                     request.value if len(request.responses) >= self.sloppy_W and not failed else "Error"
                 ), request.context)
-            # if not a failed put
-            # if len(request.responses) >= self.sloppy_W and not failed:
-            #     #create a handoff message for each peer you did not get a response from
-            #     replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
+            
+            if len(request.responses) >= self.sloppy_W and timer_expired:
+                target_node = self.membership_ring.get_node_for_key(request.hash)
+                replica_nodes = self.membership_ring.get_replicas_for_key(request.hash)
+                
+                all_nodes = set([target_node]+replica_nodes)
+                missing_reps = set([ socket.gethostbyname(r) for r in all_nodes]) - set(request.responses.keys())
 
-            #     needs_handoff = [ r for r in replica_nodes if r not in request.responses]
+                print(all_nodes, missing_reps, set(request.responses.keys()))
 
+                handoff_msg = messages.handoff(
+                    messages.storeFile(request.hash,request.value,request.context,request.time_created),
+                    missing_reps
+                )
+
+                hons = [ 
+                    self.membership_ring.get_handoff_node(r)
+                    for r in missing_reps
+                ]
+                
+                self.broadcast_message(hons,handoff_msg)
 
         else:  # request.type == for_*
             # unpack the forwarded request object
@@ -490,7 +506,7 @@ class Node(object):
                 # request.time_created=time.time()
                 self.leader_to_coord(request)
                 T = Timer(self.request_timelimit,
-                  self.complete_request, args=[request]
+                  self.complete_request, args=[request], kwargs={"timer_expired":True}
                   )
                 T.start()
                 self.req_message_timers[request.time_created] = T
@@ -520,16 +536,21 @@ class Node(object):
 
         # send msg to request.sendBackTo
         # if request.sendBackTo not in self.client_list:
-        self.broadcast_message([request.sendBackTo], msg)
-        print(msg)
-        # self.connections[request.sendBackTo].sendall(msg)
+        if not request.responded:
+            self.broadcast_message([request.sendBackTo], msg)
+            request.responded=True
 
-        print("Sent results back to ", request.sendBackTo)
-        # remove request from ongoing list
-        self.ongoing_requests = list(filter(
-            lambda r: r.time_created != request.time_created, self.ongoing_requests
-        ))
-        print("Number of ongoing Requests: ", len(self.ongoing_requests))
+            print(msg)
+            # self.connections[request.sendBackTo].sendall(msg)
+
+            print("Sent results back to ", request.sendBackTo)
+
+        if timer_expired:
+            # remove request from ongoing list
+            self.ongoing_requests = list(filter(
+                lambda r: r.time_created != request.time_created, self.ongoing_requests
+            ))
+            print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
     def perform_operation(self, data, sendBackTo):
         if len(data) == 2:  # this is a getFile msg

@@ -11,6 +11,7 @@ class Request(object):
         self.sendBackTo = sendBackTo
         self.responses = {}
         self.previous_request = previous_request
+        self.responded=False
 
         if rtype == 'put':
             self.forwardedTo = None

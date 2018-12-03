@@ -125,11 +125,13 @@ def peerList(peers):
     data = pickle.dumps(peers)
     return b'\x09' + struct.pack('!i', len(data)) + data
 
-
 def forwardedReq(msg):
     data = pickle.dumps(msg)
     return b'\x0A' + struct.pack('!i', len(data)) + data
 
+def handoff(command,replicas):
+    data = pickle.dumps((command,replicas))
+    return b'\x0C' + struct.pack('!i', len(data)) + data
 
 def responseForForward(msg):
     data = pickle.dumps(msg)
