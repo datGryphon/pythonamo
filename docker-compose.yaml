@@ -138,6 +138,20 @@ services:
     volumes:
     - "./:/code"
 
+  client2:
+    image: python:3
+    command: python -u client.py --leader vdi-linux-031.ccs.neu.edu --port 13337
+    hostname: vdi-linux-042.ccs.neu.edu
+    working_dir: /code
+    stdin_open: true
+    tty: true
+    networks:
+      neunet:
+        aliases:
+        - vdi-linux-042.ccs.neu.edu
+    volumes:
+    - "./:/code"
+
   testcases:
     image: python:3
     command: python -u test_cases.py --leader vdi-linux-030.ccs.neu.edu --port 13337

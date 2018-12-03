@@ -160,9 +160,7 @@ class Node(object):
         self.client_list.add(sendBackTo)
 
         # todo: if not self.leader, forward it to leader
-        if not self.is_leader:
-            print("Contact leader")
-            return
+        
 
         # Maps command to the corresponding function.
         # Command arguments are passed as the first argument to the function.
@@ -237,6 +235,9 @@ class Node(object):
         print("wrote handoff messages to disk")
 
     def add_node(self, data, sender):
+        if not self.is_leader:
+            self._send_req_response_to_client(sender, "Error: This is not the leader")
+            return
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
         if not data:
             self._send_req_response_to_client(sender, "Error: hostname required")
@@ -274,6 +275,10 @@ class Node(object):
 
     # Send a remove node message to everyone and if you are that node, shutdown
     def remove_node(self, data, sender):
+        if not self.is_leader:
+            self._send_req_response_to_client(sender, "Error: This is not the leader")
+            return
+
         if not data:
             self._send_req_response_to_client(sender, "Error: hostname required")
             return
