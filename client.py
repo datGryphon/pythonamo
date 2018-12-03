@@ -15,7 +15,7 @@ try:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((args.leader, args.port))
 
-	# create tcp socket for communication with peers and clients
+    # create tcp socket for communication with peers and clients
     tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp_socket.bind(("", args.port))
     tcp_socket.listen(10)
@@ -30,37 +30,37 @@ else:
     msg = messages.client_message(user_input)
     s.sendall(msg)
 
-    socks=[sys.stdin.fileno(),tcp_socket,s]
+    socks = [sys.stdin.fileno(), tcp_socket, s]
 
 while True:
 
-	print('++>',end='')
-	sys.stdout.flush()
+    print('++>', end='')
+    sys.stdout.flush()
 
-	readable = select.select(socks,[],[])[0]
+    readable = select.select(socks, [], [])[0]
 
-	for fd in readable:
-		if fd is sys.stdin.fileno():
-			msg = input()
-			if msg:
-				s.sendall(messages.client_message(msg))
-			else:
-				s.close()
-				exit(0)
-		elif fd is tcp_socket:
-			conn,addr = tcp_socket.accept()
-			socks.append(conn)
-		else:
-			msg=fd.recv(5)
+    for fd in readable:
+        if fd is sys.stdin.fileno():
+            msg = input()
+            if msg:
+                s.sendall(messages.client_message(msg))
+            else:
+                s.close()
+                exit(0)
+        elif fd is tcp_socket:
+            conn, addr = tcp_socket.accept()
+            socks.append(conn)
+        else:
+            msg = fd.recv(5)
 
-			if not msg:
-				fd.close()
-				socks = [ f for f in socks if f is not fd ]
-			else:
-				message_len = struct.unpack('!i', msg[1:5])[0]
+            if not msg:
+                fd.close()
+                socks = [f for f in socks if f is not fd]
+            else:
+                message_len = struct.unpack('!i', msg[1:5])[0]
 
-				data = b''
-				while len(data) < message_len:
-					data += fd.recv(message_len - len(data))
+                data = b''
+                while len(data) < message_len:
+                    data += fd.recv(message_len - len(data))
 
-				print(messages._unpack_message(msg+data)[1])
+                print(messages._unpack_message(msg + data)[1])

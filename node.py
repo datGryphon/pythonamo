@@ -67,7 +67,7 @@ class Node(object):
                 hosts = f.readlines()
                 for h in hosts:
                     self.membership_ring.add_node(h.strip())
-            print("Restored membership info from %s" % self.ring_log_file)
+            print("Restored membership information from %s" % self.ring_log_file)
         except FileNotFoundError:
             pass
 
@@ -79,7 +79,7 @@ class Node(object):
                 self.handoff_timer = self.create_handoff_timer()
                 self.handoff_timer.start()
 
-            print("Restored handoff info from %s" % self.handoff_log)
+            print("Restored hand off messages from %s" % self.handoff_log)
         except FileNotFoundError:
             pass
 
@@ -159,9 +159,6 @@ class Node(object):
 
         self.client_list.add(sendBackTo)
 
-        # todo: if not self.leader, forward it to leader
-        
-
         # Maps command to the corresponding function.
         # Command arguments are passed as the first argument to the function.
         command_registry = {  # Possible commands:
@@ -185,11 +182,10 @@ class Node(object):
         return command_registry[command](data, sendBackTo)
 
     def handle_handoff(self, data, sendBackTo):
-        print("New Handoff message!!!", data)
         # data should have (message, list of hosts to hand data off to)
 
         for h in data[1]:
-            print("Store handoff message for %s" % h)
+            print("Storing hand off message for %s" % h)
             self._handoff_messages[h].add(data[0])
 
         # Save handoff messages to disk
@@ -201,44 +197,40 @@ class Node(object):
             self.handoff_timer.start()
 
     def try_sending_handoffs(self):
-        print("sending Handoffs...", self._handoff_messages)
+        print("Attempting to send hand off messages...")
 
         updated_handoff_messages = defaultdict(set)
 
         for (host, msgs) in self._handoff_messages.items():
-            print("Sending handoff message to %s" % host)
-            print(msgs)
-
             for msg in msgs:
-                print("Sending message: ", msg)
                 fail = self.broadcast_message([host], msg)
                 if fail:
-                    print("Failed to senf messae")
                     updated_handoff_messages[host].add(msg)
 
         self._handoff_messages = updated_handoff_messages
         self.sync_handoffs_to_disk()
 
         if len(self._handoff_messages) > 0:
-            print("we still have handouts. starting timer")
+            print("Undelivered hand offs. Restarting timer")
             self.handoff_timer = self.create_handoff_timer()
             self.handoff_timer.start()
             return
 
-        print("No more handoffs to send. Stopping timer.")
+        print("Sent all hand off messages.")
         self.handoff_timer = None
 
     def sync_handoffs_to_disk(self):
-        # Save handoff messages to disk
+        # Save hand off messages to disk
         with open(self.handoff_log, 'wb') as f:
             f.write(pickle.dumps(self._handoff_messages))
-        print("wrote handoff messages to disk")
 
     def add_node(self, data, sender):
+        """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
+
         if not self.is_leader:
             self._send_req_response_to_client(sender, "Error: This is not the leader")
             return
-        """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
+
         if not data:
             self._send_req_response_to_client(sender, "Error: hostname required")
             return
@@ -317,6 +309,7 @@ class Node(object):
     def put_data(self, data, sendBackTo):
         if len(data) != 3:
             return "Error: Invalid operands\nInput: (<key>,<prev version>,<value>)"
+
         data = [data[0], json.loads(data[1]), data[2]]
         key = data[0]
         prev = data[1]
@@ -325,11 +318,13 @@ class Node(object):
         if not self.is_leader:
             # forward request to leader for client
             return self._send_data_to_peer(self.leader_hostname, data, sendBackTo)
+
         else:  # I am the leader
             if target_node == self.hostname:
                 # I'm processing a request for a client directly
                 self.start_request('put', data, sendBackTo=sendBackTo)
-                return "started put request for %s:%s locally [%s]" % (key, value, self.hostname)
+                return
+
             else:  # I am forwarding a request from the client to the correct node
                 return self._send_data_to_peer(target_node, data, sendBackTo)
 
@@ -337,16 +332,15 @@ class Node(object):
         """Retrieve V for given K from the database. data[0] must be the key"""
         if not data:
             return "Error: key required"
+
         target_node = self.membership_ring.get_node_for_key(data[0])
         # if I can do it myself
         if target_node == self.hostname:
             # I am processing a request for a client directly
             self.start_request('get', data[0], sendBackTo=sendBackTo)
-            return "started get request for %s:%s locally [%s]" % (
-                data[0], self.db.getFile(data[0]), self.hostname
-            )
+
         else:  # forward the client request to the peer incharge of req
-            return self._request_data_from_peer(target_node, data[0], sendBackTo)
+            self._request_data_from_peer(target_node, data[0], sendBackTo)
 
     def _process_req_message(self, data, sender):
         # data = (view_id, req_id, operation, address)
@@ -457,9 +451,7 @@ class Node(object):
     # then when the response is returned, complete_request will send the
     # output to the correct client or peer (or stdin)
     def start_request(self, rtype, args, sendBackTo, prev_req=None):
-        print("%s: New Request [ %s, %s ] for %s" % (
-            self.hostname, rtype, args, sendBackTo
-        ))
+        print("%s request from %s: %s" % (rtype, sendBackTo, args))
         req = Request(rtype, args, sendBackTo, previous_request=prev_req)  # create request obj
         self.ongoing_requests.append(req)  # set as ongoing
 
@@ -481,11 +473,12 @@ class Node(object):
             # send the getFile message to everyone in the replication range
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
+
+            print("Sending getFile message to %s" % ", ".join(replica_nodes))
             fails = self.broadcast_message(replica_nodes, msg)
             if fails:
                 print("Failed to send get msg to %s" % ', '.join(fails))
 
-            print("Sent getFile message to %s" % replica_nodes)
         elif rtype == 'put':
             self.db.storeFile(args[0], socket.gethostbyname(self.hostname), args[1], args[2])
             my_resp = messages.storeFileResponse(args[0], args[1], args[2], req.time_created)
@@ -494,11 +487,11 @@ class Node(object):
             # send the storeFile message to everyone in the replication range
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
+            print("Sending storeFile message to %s" % ", ".join(replica_nodes))
             fails = self.broadcast_message(replica_nodes, msg)
             if fails:
                 print("Failed to send put msg to %s" % ', '.join(fails))
 
-            print("Sent storeFile message to %s" % replica_nodes)
         else:
             msg = messages.forwardedReq(req)
             # forward message to target node
@@ -508,9 +501,8 @@ class Node(object):
             else:
                 print("Forwarded Request to %s" % req.forwardedTo)
 
-        print("Number of ongoing Requests: ", len(self.ongoing_requests))
-
     def leader_to_coord(self, req):
+        print("Leader is assuming role of coordinator")
         replica_nodes = self.membership_ring.get_replicas_for_key(req.hash)
         req.type = req.type[4:]
 
@@ -520,7 +512,6 @@ class Node(object):
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
 
         self.broadcast_message(replica_nodes, msg)
-        print("Leader is assuming roll of coordinator")
 
     def find_req_for_msg(self, req_ts):
         return list(filter(
@@ -563,16 +554,10 @@ class Node(object):
 
     def complete_request(self, request, timer_expired=False):
 
-        # self.req_message_timers[request.time_created].cancel()
-        # (peername,msg) tuples for hinted handoff
-        handoffs = []
-
         failed = False
 
-        print("Completed Request ")
         if request.type == 'get':
             # if sendbackto is a peer
-            print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(request), ") ")
             if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
                 # send the whole request object back to the peer
@@ -586,7 +571,7 @@ class Node(object):
 
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
-                print("Sucessful put completed for ", request.sendBackTo)
+                print("Successful put completed for ", request.sendBackTo)
 
             if request.sendBackTo not in self.client_list:
                 # this is a response to a for_*
@@ -607,9 +592,6 @@ class Node(object):
                 all_nodes = set([target_node] + replica_nodes)
                 missing_reps = set([self.membership_ring.hostname_to_ip[r] for r in all_nodes]) - set(request.responses.keys())
 
-                print("=========>  have to handoff message for ", missing_reps)
-                print(all_nodes, missing_reps, set(request.responses.keys()))
-
                 handoff_msg = messages.handoff(
                     messages.storeFile(request.hash, request.value, request.context, request.time_created),
                     missing_reps
@@ -620,6 +602,7 @@ class Node(object):
                     for r in missing_reps
                 ]
 
+                print("Handing off messages for %s to %s" % (", ".join(missing_reps), ", ".join(hons)))
                 self.broadcast_message(hons, handoff_msg)
 
         else:  # request.type == for_*
@@ -638,7 +621,6 @@ class Node(object):
                 return
             else:
                 data = data[0]
-                print("Request Response Data: ", data)
                 # if sendbackto is a peer
                 if request.sendBackTo not in self.client_list:
                     # unpickle the returned put request
@@ -653,8 +635,6 @@ class Node(object):
                         request.value if data and len(data.responses) >= self.sloppy_W and not failed else "Error"
                     ), request.context)
                 else:  # for_get
-                    print("Response for client (name: ", request.hash, ", results: ", self.coalesce_responses(data),
-                          ") ")
                     msg = messages.getResponse(request.hash, (
                         self.coalesce_responses(data) if not failed else "Error"
                     ))
@@ -662,36 +642,26 @@ class Node(object):
         # send msg to request.sendBackTo
         # if request.sendBackTo not in self.client_list:
         if not request.responded:
+            print("Sending response back to ", request.sendBackTo)
             self.broadcast_message([request.sendBackTo], msg)
             request.responded = True
-
-            print(msg)
-            # self.connections[request.sendBackTo].sendall(msg)
-
-            print("Sent results back to ", request.sendBackTo)
 
         if timer_expired:
             # remove request from ongoing list
             self.ongoing_requests = list(filter(
                 lambda r: r.time_created != request.time_created, self.ongoing_requests
             ))
-            print("Number of ongoing Requests: ", len(self.ongoing_requests))
 
     def perform_operation(self, data, sendBackTo):
         if len(data) == 2:  # this is a getFile msg
-            print(sendBackTo, " is asking me to get ", data)
+            print("%s is asking me to get %s" % (sendBackTo, data[0]))
             msg = messages.getFileResponse(data[0], self.db.getFile(data[0]), data[1])
         else:  # this is a storeFile
-            if data[0][:5] == 'sleep':
-                print(data)
-                time.sleep(int(data[2]))
-            print(sendBackTo, " is asking me to store", data)
+            print("%s is asking me to store %s" % (sendBackTo, data[0]))
             self.db.storeFile(data[0], sendBackTo, data[1], data[2])
             msg = messages.storeFileResponse(*data)
 
         self.broadcast_message([sendBackTo], msg)
-        # self.connections[sendBackTo].sendall(msg)
-        print("Completed operation for ", sendBackTo)
 
     def handle_forwarded_req(self, prev_req, sendBackTo):
         target_node = self.membership_ring.get_node_for_key(prev_req.hash)
@@ -706,37 +676,27 @@ class Node(object):
                     if target_node == self.hostname:
                         args = (prev_req.hash, prev_req.value, prev_req.context)
                         self.start_request('put', args, sendBackTo, prev_req=prev_req)
-                        print("handling forwarded put request locally")
                     else:
                         args = (target_node, prev_req.hash,
                                 prev_req.value, prev_req.context
                                 )
                         self.start_request('for_put', args, sendBackTo, prev_req)
-                        print("Forwarded Forwarded put request to correct node")
+
                 else:  # the leader is forwarding you a put
                     args = (prev_req.hash, prev_req.value, prev_req.context)
                     self.start_request('put', args, sendBackTo, prev_req=prev_req)
-                    print("handling forwarded put request locally")
+
             # someone forwarded you a get request, you need to take care of it
             # start new get request with this as the previous one
             else:  # type is get or for_get
                 self.start_request('get', prev_req.hash, sendBackTo, prev_req)
-                print("handling forwarded get request locally")
-        else:
-            print("Throwing away stale request.")
 
     def _send_data_to_peer(self, target_node, data, sendBackTo):
-
         # create for_put request
         self.start_request('for_put', [target_node] + data, sendBackTo=sendBackTo)
 
-        return "forwarded put request with %s to node %s" % (data, target_node)
-
     def _request_data_from_peer(self, target_node, data, sendBackTo):
-
         self.start_request('for_get', (target_node, data), sendBackTo=sendBackTo)
-
-        return "requesting data from %s" % target_node
 
     def _create_socket(self, hostname):
         """Creates a socket to the host and adds it connections dict. Returns created socket object."""
@@ -748,8 +708,8 @@ class Node(object):
             self.connections[socket.gethostbyname(hostname)] = s
             return s
         except Exception as e:
-            print(e)
-            print("Error creating connection to %s. Probably down?" % hostname)
+            if hostname not in self.client_list:
+                print("Error creating connection to %s: %s" % (hostname, e))
             return None
 
     # this is where we need to handle hinted handoff if a

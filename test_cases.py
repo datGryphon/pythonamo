@@ -26,13 +26,14 @@ nodes = [
     "vdi-linux-035.ccs.neu.edu",
     "vdi-linux-036.ccs.neu.edu",
     "vdi-linux-037.ccs.neu.edu",
-    # "vdi-linux-038.ccs.neu.edu",
+    "vdi-linux-038.ccs.neu.edu",
     # "vdi-linux-039.ccs.neu.edu",
 ]
 
 
 def add_nodes():
     for node in nodes:
+        print("++> add-node %s" % node)
         msg = messages.client_message("add-node %s" % node)
         s.sendall(msg)
 
