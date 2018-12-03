@@ -13,7 +13,7 @@ windows:
     - docker-compose up machine8
     - docker-compose up machine9
     - docker-compose up machine1
-    - make testcase
+    - focus: true
 
   start_directory: /home/vamc/src/github.com/vamc19/python-dynamo
   window_name: zsh
