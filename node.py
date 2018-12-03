@@ -427,7 +427,10 @@ class Node(object):
             # send the getFile message to everyone in the replication range
             msg = messages.getFile(req.hash, req.time_created)
             # this function will need to handle hinted handoff
-            self.broadcast_message(replica_nodes, msg)
+            fails = self.broadcast_message(replica_nodes, msg)
+            if fails:
+                print("Failed to send get msg to %s" % ', '.join(fails))
+
             print("Sent getFile message to %s" % replica_nodes)
         elif rtype == 'put':
             self.db.storeFile(args[0], socket.gethostbyname(self.hostname), args[1], args[2])
@@ -437,7 +440,10 @@ class Node(object):
             # send the storeFile message to everyone in the replication range
             msg = messages.storeFile(req.hash, req.value, req.context, req.time_created)
             # this function will need to handle hinted handoff
-            self.broadcast_message(replica_nodes, msg)
+            fails = self.broadcast_message(replica_nodes, msg)
+            if fails:
+                print("Failed to send put msg to %s" % ', '.join(fails))
+
             print("Sent storeFile message to %s" % replica_nodes)
         else:
             msg = messages.forwardedReq(req)
@@ -523,6 +529,8 @@ class Node(object):
                 msg = messages.getResponse(request.hash, (
                     self.coalesce_responses(request) if not failed else "Error"
                 ))
+
+        # todo: work this flow. start testcase -> *stop* (not pause) machine6 -> try to insert key 'k' -> should fail
         elif request.type == 'put':
             if len(request.responses) >= self.sloppy_W:
                 print("Sucessful put completed for ", request.sendBackTo)
@@ -544,7 +552,7 @@ class Node(object):
                 replica_nodes = self.membership_ring.get_replicas_for_key(request.hash)
 
                 all_nodes = set([target_node] + replica_nodes)
-                missing_reps = set([socket.gethostbyname(r) for r in all_nodes]) - set(request.responses.keys())
+                missing_reps = set([self.membership_ring.hostname_to_ip[r] for r in all_nodes]) - set(request.responses.keys())
 
                 print("=========>  have to handoff message for ", missing_reps)
                 print(all_nodes, missing_reps, set(request.responses.keys()))
@@ -680,7 +688,8 @@ class Node(object):
     def _create_socket(self, hostname):
         """Creates a socket to the host and adds it connections dict. Returns created socket object."""
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(10)  # 10 seconds
+        s.setblocking(False)
+        s.settimeout(1)  # 10 seconds
         try:
             s.connect((hostname, self.tcp_port))
             self.connections[socket.gethostbyname(hostname)] = s
@@ -695,9 +704,12 @@ class Node(object):
     # message until the correct node recovers
     def broadcast_message(self, nodes, msg):
         fails = []
+        print("sending messages to %s" % ", ".join(nodes))
         for node in nodes:
+            print("sending message to %s" % node)
             c = self.connections.get(node, self._create_socket(node))
             if not c:
+                print("Failef to send message to %s" % node)
                 fails.append(node)
                 continue
             c.sendall(msg)

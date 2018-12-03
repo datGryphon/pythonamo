@@ -12,7 +12,8 @@ class Ring(object):
         :param vnode_count: number of virtual nodes.
         :param replica_count: number of replicas for each key
         """
-        self.vnode_count = vnode_count
+
+        self.vnode_count = 1  # for now, only 1 vnode is supported
         self.replica_count = replica_count
 
         # maps node_id to corresponding virtual nodes (stored as set)
@@ -21,7 +22,8 @@ class Ring(object):
         self._vnode_hashes = []
         self._nodes = {}
 
-        self._dns = {}
+        self.ip_to_hostname = {}
+        self.hostname_to_ip = {}
 
         self._generate_hash = lambda key: int(md5(key.encode('utf-8')).hexdigest(), 16)
         self._generate_vnode_ids = lambda node_id: (node_id + '_' + str(i) for i in range(self.vnode_count))
@@ -82,7 +84,8 @@ class Ring(object):
     # Helper functions to expose stable API
     def add_node(self, node_hostname):
         ip = socket.gethostbyname(node_hostname)
-        self._dns[ip] = node_hostname
+        self.ip_to_hostname[ip] = node_hostname
+        self.hostname_to_ip[node_hostname] = ip
         return self.__setitem__(node_hostname, node_hostname)
 
     def remove_node(self, node_id):
@@ -106,7 +109,7 @@ class Ring(object):
         return set(self._nodes.values())
 
     def get_handoff_node(self, node_ip):
-        hostname = self._dns[node_ip]
+        hostname = self.ip_to_hostname[node_ip]
         # hostname = node_ip
         vnode_ids = list(self._generate_vnode_ids(hostname))
 
@@ -114,6 +117,15 @@ class Ring(object):
         handoff_index = (index + self.replica_count) % len(self._vnode_hashes)
 
         return self._nodes[self._vnode_hashes[handoff_index]]
+
+    def get_key_range(self, hostname):
+        vnode_id = list(self._generate_vnode_ids(hostname))[0]
+        index = self._get_nearest_hash_index(self._generate_hash(vnode_id))
+
+        start_key = self._vnode_hashes[index]
+        end_key = self._vnode_hashes[index]
+
+        return start_key, end_key
 
 
 if __name__ == '__main__':
@@ -127,22 +139,48 @@ if __name__ == '__main__':
     r.add_node("node6.hostname")
     r.add_node("node7.hostname")
 
+    # print node arrangement:
+    print("ring structure:")
+    sids = sorted(r._vnode_hashes)
+    for s in sids:
+        print(s, r._nodes[s])
+    print('\n\n\n')
+
+    print("range for node1:", r.get_key_range("node1.hostname"))
+
     # Try inserting a key
+    print("for key1...")
     target_hostname = r.get_node_for_key("key1")
-    print(target_hostname)  # got node2hostname
+    key_hash = r._generate_hash("key1")
+    print(key_hash, target_hostname)  # got node2hostname
     # proceed to put data in target_hostname
 
+    print("\nfor key2..")
+
     target_hostname = r.get_node_for_key("key2")
-    print(target_hostname)  # got node3hostname
+    key_hash = r._generate_hash("key2")
+    print(key_hash, target_hostname)  # got node3hostname
+
+    print("\nfor key6..")
 
     target_hostname = r.get_node_for_key("key6")
-    print(target_hostname)  # got node3hostname
+    key_hash = r._generate_hash("key6")
+    print(key_hash, target_hostname)  # got node3hostname
 
-    target_hostname = r.get_node_for_key("key1")
-    print(target_hostname)  # got node1hostname
 
-    target_hostnames = r.get_replicas_for_key("key1")
-    print(target_hostnames)  # got node1hostname
+    print("\nfor key10..")
+
+    target_hostname = r.get_node_for_key("key10")
+    key_hash = r._generate_hash("key10")
+
+    print(key_hash, target_hostname)  # got node3hostname
+
+    print("\nfor key11..")
+
+    target_hostname = r.get_node_for_key("key11")
+    key_hash = r._generate_hash("key11")
+
+    print(key_hash, target_hostname)  # got node3hostname
 
     print(len(r))
 
@@ -153,12 +191,5 @@ if __name__ == '__main__':
     print("node3" in r)
 
     print(r.get_all_hosts())
-
-    # print node arrangement:
-    print("ring structure:")
-    sids = sorted(r._vnode_hashes)
-    for s in sids:
-        print(r._nodes[s])
-    print('\n\n\n')
 
     # print(r.get_handoff_node("node1.hostname"))
