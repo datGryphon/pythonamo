@@ -33,9 +33,11 @@ class Node(object):
         self.bootstrapping = True
         self.is_member = False
 
+        # Flag to keep track of a add-node is underway
         self._adding_node = False
 
-        self.sloppy_Qsize = sloppy_Qsize  # fraction of total members to replicate on
+        self.sloppy_Qsize = sloppy_Qsize  # total members to replicate on
+
         # number of peers required for a read or write to succeed.
         self.sloppy_R = sloppy_R
         self.sloppy_W = sloppy_W
@@ -50,7 +52,6 @@ class Node(object):
         self.log_prefix = os.getcwd()
         self.ring_log_file = os.path.join(self.log_prefix, self.hostname + '.ring')
         self.db_path = os.path.join(self.log_prefix, self.hostname + '.db')
-        print(self.ring_log_file)
 
         try:
             with open(self.ring_log_file, 'r') as f:
@@ -76,9 +77,6 @@ class Node(object):
         self.connections = {}
         self.client_list = set()
 
-        self.root = logging.getLogger()
-        self.root.setLevel(logging.DEBUG)
-
         # Maintains handoff messages to be sent
         # IP : set(handoff messages)
         self._handoff_messages = defaultdict(set)
@@ -102,7 +100,7 @@ class Node(object):
                     try:
                         header = s.recv(5)
                     except:
-                        print("Connection reset")
+                        print("Connection reset.")
                         continue
 
                     if not header:  # remove for connection pool and close socket
@@ -163,13 +161,12 @@ class Node(object):
         }
 
         if not user_input:
-            print("User input empty")
-            return ""
+            self._send_req_response_to_client(sendBackTo, "User input empty")
 
         # First word is command. Rest are then arguments.
         command, *data = user_input.split(" ")
         if command not in command_registry:
-            return "Invalid command"
+            self._send_req_response_to_client(sendBackTo, "Invalid command")
 
         # Call the function associated with the command in command_registry
         return command_registry[command](data, sendBackTo)
@@ -217,11 +214,11 @@ class Node(object):
     def add_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
         if not data:
-            return "Error: hostname required"
+            self._send_req_response_to_client(sender, "Error: hostname required")
+            return
 
         if self._adding_node:
-            print("Node adding in progress...")
-            self._send_req_response_to_client(sender, "adding node")
+            self._send_req_response_to_client(sender, "add-node operation in progress. Try again")
             return
 
         if data[0] in self.membership_ring:
@@ -230,8 +227,7 @@ class Node(object):
 
         self._adding_node = True
 
-        print("Sending req message to peers")
-        print("Adding new node: %s : %s" % (self.current_view, self.membership_request_id))
+        print("Starting add-node operation for %s" % data[0])
         new_peer_message = messages.reqMessage(self.current_view, self.membership_request_id, 1, data[0])
 
         # associate hostname to (view_id, req_id)
@@ -245,16 +241,11 @@ class Node(object):
 
         self.broadcast_message(nodes_to_broadcast, new_peer_message)
 
-        # todo: handle timer
         t = Timer(self.request_timelimit, self._req_timeout, args=[(self.current_view, self.membership_request_id)])
         self.req_message_timers[(self.current_view, self.membership_request_id)] = t
         t.start()
 
-        print("timer started")
-
         self.membership_request_id += 1
-
-        return
 
     # Send a remove node message to everyone and if you are that node, shutdown
     def remove_node(self, data, sender):
@@ -307,13 +298,11 @@ class Node(object):
         # if not self.is_member:
         #     ok_message =
 
-        print("Got req_message")
+        print("Processed request message to add %s" % address)
         ok_message = messages.okMessage(view_id, req_id)
         self.connections.get(sender, self._create_socket(sender)).sendall(ok_message)
-        print("Sent okay to %s" % sender)
 
     def _process_ok_message(self, data, sender):
-        print("got okay message")
         self._req_responses[data].add(sender)
 
         # number of replies equal number of *followers* already in the ring, add peer to membership
@@ -322,32 +311,26 @@ class Node(object):
             # Cancel timer
             t = self.req_message_timers.get(data, None)
             if not t:
-                print("No timer, what happened?")
                 return
-
-            print("Cancelling timer...")
             t.cancel()
 
             new_peer_hostname = self._sent_req_messages[data]
             self.membership_ring.add_node(new_peer_hostname)
 
             # Send newViewMessage
-            self.current_view += 1
+            # self.current_view += 1
             new_view_message = messages.newView(self.current_view, self.membership_ring.get_all_hosts())
 
             nodes_to_broadcast = self.membership_ring.get_all_hosts()
             nodes_to_broadcast.remove(self.hostname)
             self.broadcast_message(nodes_to_broadcast, new_view_message)
 
+            print("Successfully added %s to membership ring." % new_peer_hostname)
+
             client = self._req_sender.get(data, None)
-            print("sending success to client: %s" % client)
             self._send_req_response_to_client(client, "Successfully added node to the network")
 
-            self._adding_node = False
-
-        else:
-            print("Only received okay from %d peers. Need %d confirmations" % (
-                len(self._req_responses[data]), len(self.membership_ring)), self._req_responses[data])
+            self._adding_node = False  # reset state to accept new connections
 
     def _process_new_view_message(self, data, sender):
         (view_id, peers) = data
@@ -360,10 +343,13 @@ class Node(object):
             for node in self.membership_ring.get_all_hosts():
                 f.write(node + '\n')
 
-        print("current members: ", self.membership_ring.get_all_hosts())
+        print("Successfully added host to membership ring. Total members: %d" % len(peers))
 
     def _req_timeout(self, req_id):
-        print("request ", req_id, "timed out.")
+        print("Error adding node to network. One or more nodes is offline.")
+
+        # failed_hosts = set(self.membership_ring.get_all_hosts()) - self._req_responses[req_id]
+        # failed_hosts.remove()
         sender = self._req_sender.get(req_id, None)
         self._send_req_response_to_client(sender, "Failed to add node to the network")
         self._adding_node = False
