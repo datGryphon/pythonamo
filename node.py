@@ -1,5 +1,6 @@
 import logging
 import os
+import pickle
 import socket
 import struct
 import select
@@ -49,16 +50,35 @@ class Node(object):
         self.current_view = 0  # increment this on every leader election
         self.membership_request_id = 0  # increment this on every request sent to peers
 
+        # Maintains handoff messages to be sent
+        # IP : set(handoff messages)
+        self._handoff_messages = defaultdict(set)
+        self.handoff_timer = None
+        self.create_handoff_timer = lambda: Timer(5, self.try_sending_handoffs)
+
         self.log_prefix = os.getcwd()
         self.ring_log_file = os.path.join(self.log_prefix, self.hostname + '.ring')
         self.db_path = os.path.join(self.log_prefix, self.hostname + '.db')
+        self.handoff_log = os.path.join(self.log_prefix, self.hostname + '.pickle')
 
         try:
             with open(self.ring_log_file, 'r') as f:
                 hosts = f.readlines()
                 for h in hosts:
                     self.membership_ring.add_node(h.strip())
-            print("Restored from %s" % self.hostname + '.ring')
+            print("Restored membership info from %s" % self.ring_log_file)
+        except FileNotFoundError:
+            pass
+
+        try:
+            with open(self.handoff_log, 'rb') as f:
+                self._handoff_messages = pickle.loads(f.read())
+
+            if len(self._handoff_messages) > 0:
+                self.handoff_timer = self.create_handoff_timer()
+                self.handoff_timer.start()
+
+            print("Restored handoff info from %s" % self.handoff_log)
         except FileNotFoundError:
             pass
 
@@ -76,12 +96,6 @@ class Node(object):
         # has hostnames mapped to open sockets
         self.connections = {}
         self.client_list = set()
-
-        # Maintains handoff messages to be sent
-        # IP : set(handoff messages)
-        self._handoff_messages = defaultdict(set)
-        self.handoff_timer = None
-        self.create_handoff_timer = lambda: Timer(5, self.try_sending_handoffs)
 
     def accept_connections(self):
         incoming_connections = {self.tcp_socket}
@@ -175,11 +189,14 @@ class Node(object):
         print("New Handoff message!!!", data)
         # data should have (message, list of hosts to hand data off to)
 
+        # todo: seems like a good idea to save hostname instead of ip. Else ip will not be same in next run.
         for h in data[1]:
             print("Store handoff message for %s" % h)
             self._handoff_messages[h].add(data[0])
 
-        # todo: Save handoff messages to disk
+        # Save handoff messages to disk
+        self.sync_handoffs_to_disk()
+
         # check and start timer
         if not self.handoff_timer:
             self.handoff_timer = self.create_handoff_timer()
@@ -198,9 +215,11 @@ class Node(object):
                 print("Sending message: ", msg)
                 fail = self.broadcast_message([host], msg)
                 if fail:
+                    print("Failed to senf messae")
                     updated_handoff_messages[host].add(msg)
 
         self._handoff_messages = updated_handoff_messages
+        self.sync_handoffs_to_disk()
 
         if len(self._handoff_messages) > 0:
             print("we still have handouts. starting timer")
@@ -210,6 +229,12 @@ class Node(object):
 
         print("No more handoffs to send. Stopping timer.")
         self.handoff_timer = None
+
+    def sync_handoffs_to_disk(self):
+        # Save handoff messages to disk
+        with open(self.handoff_log, 'wb') as f:
+            f.write(pickle.dumps(self._handoff_messages))
+        print("wrote handoff messages to disk")
 
     def add_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""

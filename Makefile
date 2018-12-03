@@ -7,6 +7,7 @@ HOSTFILE=hostfile
 clean:
 	rm -f *.ring
 	rm -f *.db
+	rm -f *.pickle
 
 run-db-docker: stop-docker clean
 	docker-compose up machine1 machine2 machine3 machine4 machine5 machine6 machine7 machine8 machine9
