@@ -8,7 +8,7 @@ import struct
 
     01 -- REQMessage
     
-    10 -- NewViewMessage
+    10 -- MembershipChange
 
     02 -- clientConnectRequest
 
@@ -67,8 +67,8 @@ def okMessage(view_id, req_id):
     return b'\xff' + struct.pack('!i', len(data)) + data
 
 
-def newView(view_id, address):
-    data = pickle.dumps((view_id, address))
+def membershipChange(view_id, operation, address):
+    data = pickle.dumps((view_id, operation, address))
     return b'\x10' + struct.pack('!i', len(data)) + data
 
 

@@ -88,8 +88,11 @@ class Ring(object):
         self.hostname_to_ip[node_hostname] = ip
         return self.__setitem__(node_hostname, node_hostname)
 
-    def remove_node(self, node_id):
-        return self.__delitem__(node_id)
+    def remove_node(self, node_hostname):
+        ip = self.hostname_to_ip[node_hostname]
+        del self.ip_to_hostname[ip]
+        del self.hostname_to_ip[node_hostname]
+        return self.__delitem__(node_hostname)
 
     def get_node_for_key(self, key):
         return self.__getitem__(key)
@@ -122,13 +125,15 @@ class Ring(object):
         vnode_id = list(self._generate_vnode_ids(hostname))[0]
         index = self._get_nearest_hash_index(self._generate_hash(vnode_id))
 
-        start_key = self._vnode_hashes[index]
-        end_key = self._vnode_hashes[index]
+        start_key = self._vnode_hashes[index-2]
+        end_key = self._vnode_hashes[index-1]
 
         return start_key, end_key
 
 
 if __name__ == '__main__':
+    # to make these cases work, comment lines 86-88, 115. Uncomment 116.
+
     r = Ring(vnode_count=1, replica_count=3)
 
     r.add_node("node1.hostname")
@@ -144,52 +149,68 @@ if __name__ == '__main__':
     sids = sorted(r._vnode_hashes)
     for s in sids:
         print(s, r._nodes[s])
-    print('\n\n\n')
+    print('\n')
 
     print("range for node1:", r.get_key_range("node1.hostname"))
+    print("range for node2:", r.get_key_range("node2.hostname"))
+    print("range for node3:", r.get_key_range("node3.hostname"))
+    print("range for node4:", r.get_key_range("node4.hostname"))
+    print("range for node5:", r.get_key_range("node5.hostname"))
+    print("range for node6:", r.get_key_range("node6.hostname"))
+    print("range for node7:", r.get_key_range("node7.hostname"))
 
-    # Try inserting a key
-    print("for key1...")
-    target_hostname = r.get_node_for_key("key1")
-    key_hash = r._generate_hash("key1")
-    print(key_hash, target_hostname)  # got node2hostname
-    # proceed to put data in target_hostname
-
-    print("\nfor key2..")
-
-    target_hostname = r.get_node_for_key("key2")
-    key_hash = r._generate_hash("key2")
-    print(key_hash, target_hostname)  # got node3hostname
-
-    print("\nfor key6..")
-
-    target_hostname = r.get_node_for_key("key6")
-    key_hash = r._generate_hash("key6")
-    print(key_hash, target_hostname)  # got node3hostname
-
-
-    print("\nfor key10..")
-
-    target_hostname = r.get_node_for_key("key10")
-    key_hash = r._generate_hash("key10")
-
-    print(key_hash, target_hostname)  # got node3hostname
-
-    print("\nfor key11..")
-
-    target_hostname = r.get_node_for_key("key11")
-    key_hash = r._generate_hash("key11")
-
-    print(key_hash, target_hostname)  # got node3hostname
-
-    print(len(r))
-
-    # print(r.get_all_hosts())
-
-    print("node1.hostname" in r)
-    print("node100" in r)
-    print("node3" in r)
+    # # Try inserting a key
+    # print("for key1...")
+    # target_hostname = r.get_node_for_key("key1")
+    # key_hash = r._generate_hash("key1")
+    # print(key_hash, target_hostname)  # got node2hostname
+    # # proceed to put data in target_hostname
+    #
+    # print("\nfor key2..")
+    #
+    # target_hostname = r.get_node_for_key("key2")
+    # key_hash = r._generate_hash("key2")
+    # print(key_hash, target_hostname)  # got node3hostname
+    #
+    # print("\nfor key6..")
+    #
+    # target_hostname = r.get_node_for_key("key6")
+    # key_hash = r._generate_hash("key6")
+    # print(key_hash, target_hostname)  # got node3hostname
+    #
+    #
+    # print("\nfor key10..")
+    #
+    # target_hostname = r.get_node_for_key("key10")
+    # key_hash = r._generate_hash("key10")
+    #
+    # print(key_hash, target_hostname)  # got node3hostname
+    #
+    # print("\nfor key11..")
+    #
+    # target_hostname = r.get_node_for_key("key11")
+    # key_hash = r._generate_hash("key11")
+    #
+    # print(key_hash, target_hostname)  # got node3hostname
+    #
+    # print(len(r))
+    #
+    # # print(r.get_all_hosts())
+    #
+    # print("node1.hostname" in r)
+    # print("node100" in r)
+    # print("node3" in r)
 
     print(r.get_all_hosts())
+
+    r.remove_node("node1.hostname")
+    print(r.get_all_hosts())
+
+    # print node arrangement:
+    print("ring structure:")
+    sids = sorted(r._vnode_hashes)
+    for s in sids:
+        print(s, r._nodes[s])
+    print('\n\n\n')
 
     # print(r.get_handoff_node("node1.hostname"))
