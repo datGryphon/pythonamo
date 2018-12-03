@@ -90,6 +90,7 @@ def getMessage(name):
     data = pickle.dumps(name)
     return b'\x04' + struct.pack('!i', len(data)) + data
 
+
 # send back the file name and the combined list of values
 def getResponse(name, result):
     data = pickle.dumps((name, result))
@@ -125,13 +126,16 @@ def peerList(peers):
     data = pickle.dumps(peers)
     return b'\x09' + struct.pack('!i', len(data)) + data
 
+
 def forwardedReq(msg):
     data = pickle.dumps(msg)
     return b'\x0A' + struct.pack('!i', len(data)) + data
 
-def handoff(command,replicas):
-    data = pickle.dumps((command,replicas))
+
+def handoff(command, replicas):
+    data = pickle.dumps((command, replicas))
     return b'\x0C' + struct.pack('!i', len(data)) + data
+
 
 def responseForForward(msg):
     data = pickle.dumps(msg)

@@ -79,6 +79,12 @@ class Node(object):
         self.root = logging.getLogger()
         self.root.setLevel(logging.DEBUG)
 
+        # Maintains handoff messages to be sent
+        # IP : set(handoff messages)
+        self._handoff_messages = defaultdict(set)
+        self.handoff_timer = None
+        self.create_handoff_timer = lambda: Timer(5, self.try_sending_handoffs)
+
     def accept_connections(self):
         incoming_connections = {self.tcp_socket}
 
@@ -114,9 +120,6 @@ class Node(object):
                                 pass
 
                         self._process_message(header + data, s.getpeername()[0])  # addr is a tuple of hostname and port
-                        # # todo: is there a better way to find hostname?
-                        # sender_hostname = self.dns[s.getpeername()[0]]
-                        # self._process_message(header+data, sender_hostname)
 
     def _process_message(self, data, sender):
         message_type, data_tuple = messages._unpack_message(data)
@@ -171,8 +174,45 @@ class Node(object):
         # Call the function associated with the command in command_registry
         return command_registry[command](data, sendBackTo)
 
-    def handle_handoff(self, msg, sendBackTo):
-        print("New Handoff message!!!", msg)
+    def handle_handoff(self, data, sendBackTo):
+        print("New Handoff message!!!", data)
+        # data should have (message, list of hosts to hand data off to)
+
+        for h in data[1]:
+            print("Store handoff message for %s" % h)
+            self._handoff_messages[h].add(data[0])
+
+        # todo: Save handoff messages to disk
+        # check and start timer
+        if not self.handoff_timer:
+            self.handoff_timer = self.create_handoff_timer()
+            self.handoff_timer.start()
+
+    def try_sending_handoffs(self):
+        print("sending Handoffs...", self._handoff_messages)
+
+        updated_handoff_messages = defaultdict(set)
+
+        for (host, msgs) in self._handoff_messages.items():
+            print("Sending handoff message to %s" % host)
+            print(msgs)
+
+            for msg in msgs:
+                print("Sending message: ", msg)
+                fail = self.broadcast_message([host], msg)
+                if fail:
+                    updated_handoff_messages[host].add(msg)
+
+        self._handoff_messages = updated_handoff_messages
+
+        if len(self._handoff_messages) > 0:
+            print("we still have handouts. starting timer")
+            self.handoff_timer = self.create_handoff_timer()
+            self.handoff_timer.start()
+            return
+
+        print("No more handoffs to send. Stopping timer.")
+        self.handoff_timer = None
 
     def add_node(self, data, sender):
         """Add node to membership. data[0] must be the hostname. Initiates 2PC."""
@@ -487,13 +527,15 @@ class Node(object):
                     request.value if len(request.responses) >= self.sloppy_W and not failed else "Error"
                 ), request.context)
 
-            if len(request.responses) >= self.sloppy_W and timer_expired:
+            # if len(request.responses) >= self.sloppy_W and timer_expired:
+            if timer_expired and len(request.responses) < self.sloppy_Qsize:
                 target_node = self.membership_ring.get_node_for_key(request.hash)
                 replica_nodes = self.membership_ring.get_replicas_for_key(request.hash)
 
                 all_nodes = set([target_node] + replica_nodes)
                 missing_reps = set([socket.gethostbyname(r) for r in all_nodes]) - set(request.responses.keys())
 
+                print("=========>  have to handoff message for ", missing_reps)
                 print(all_nodes, missing_reps, set(request.responses.keys()))
 
                 handoff_msg = messages.handoff(
