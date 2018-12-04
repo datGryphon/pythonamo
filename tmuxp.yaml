@@ -1,7 +1,7 @@
 session_name: dynamo
 windows:
 - focus: 'true'
-  layout: d97c,197x50,0,0{98x50,0,0[98x6,0,0,5,98x5,0,7,11,98x6,0,13,10,98x5,0,20,12,98x6,0,26,8,98x5,0,33,13,98x5,0,39,9,98x5,0,45,14],98x50,99,0[98x25,99,0,6,98x24,99,26,15]}
+  layout: 4a30,175x46,0,0{87x46,0,0[87x5,0,0,223,87x4,0,6,224,87x6,0,11,225,87x5,0,18,226,87x6,0,24,227,87x5,0,31,228,87x4,0,37,229,87x4,0,42,230],87x46,88,0[87x23,88,0,231,87x11,88,24,232,87x10,88,36,234]}
 #  options: {}
   panes:
     - docker-compose up machine2
@@ -14,6 +14,7 @@ windows:
     - docker-compose up machine9
     - docker-compose up machine1
     - focus: true
+    -
 
   start_directory: /home/vamc/src/github.com/vamc19/python-dynamo
   window_name: zsh

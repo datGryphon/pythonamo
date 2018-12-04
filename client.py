@@ -6,14 +6,14 @@ import struct
 import messages
 
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--leader', help='Hostname of leader')
+parser.add_argument('--node', help='Hostname of node')
 parser.add_argument('--port', help='TCP port', type=int)
 
 args = parser.parse_args()
 
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((args.leader, args.port))
+    s.connect((args.node, args.port))
 
     # create tcp socket for communication with peers and clients
     tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

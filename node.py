@@ -100,6 +100,7 @@ class Node(object):
 
     def accept_connections(self):
         incoming_connections = {self.tcp_socket}
+        print("Accepting connections...")
 
         while True:
             readable, _, _ = select.select(incoming_connections, [], [], 0)
@@ -166,8 +167,6 @@ class Node(object):
             "remove-node": self.remove_node,  # 2. remove node from membership
             "put": self.put_data,  # 3. put data
             "get": self.get_data,  # 4. get data
-            "delete": lambda x: x,  # 5. delete data
-            "quit": lambda x: x  # 6. Quit
         }
 
         if not user_input:
@@ -346,11 +345,6 @@ class Node(object):
         # data = (view_id, req_id, operation, address)
         (view_id, req_id, operation, address) = data
 
-        # todo: handle cases when not to send okay
-        # # New member. Send okay
-        # if not self.is_member:
-        #     ok_message =
-
         print("Processed request message to add %s" % address)
         # save the message type
         self._received_req_messages[(view_id, req_id)] = (address, operation)
@@ -417,6 +411,7 @@ class Node(object):
 
         print("Successfully modified membership ring. Total members: %d" % len(self.membership_ring.get_all_hosts()))
         print("Current members: %s" % ", ".join(self.membership_ring.get_all_hosts()))
+        print("Keys to manage: ", self.membership_ring.get_key_range(self.hostname))
 
     def _req_timeout(self, req_id):
         print("Error adding node to network. One or more nodes is offline.")
@@ -592,8 +587,10 @@ class Node(object):
                 all_nodes = set([target_node] + replica_nodes)
                 missing_reps = set([self.membership_ring.hostname_to_ip[r] for r in all_nodes]) - set(request.responses.keys())
 
+                handoff_store_msg = messages.storeFile(request.hash, request.value, request.context, request.time_created)
+
                 handoff_msg = messages.handoff(
-                    messages.storeFile(request.hash, request.value, request.context, request.time_created),
+                    handoff_store_msg,
                     missing_reps
                 )
 
@@ -603,6 +600,9 @@ class Node(object):
                 ]
 
                 print("Handing off messages for %s to %s" % (", ".join(missing_reps), ", ".join(hons)))
+                if self.hostname in hons:
+                    self.handle_handoff((handoff_store_msg, missing_reps), self.hostname)
+                    hons.remove(self.hostname)
                 self.broadcast_message(hons, handoff_msg)
 
         else:  # request.type == for_*

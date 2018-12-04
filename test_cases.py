@@ -32,6 +32,8 @@ nodes = [
 
 
 def add_nodes():
+    input("++>")
+
     for node in nodes:
         print("++> add-node %s" % node)
         msg = messages.client_message("add-node %s" % node)
